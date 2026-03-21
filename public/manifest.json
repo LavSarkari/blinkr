@@ -1,0 +1,30 @@
+{
+  "name": "Blinkr — Free Omegle Alternative",
+  "short_name": "Blinkr",
+  "description": "Talk to strangers anonymously. Random text & video chat. The best free Omegle alternative.",
+  "start_url": "/",
+  "id": "/",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "orientation": "portrait",
+  "scope": "/",
+  "lang": "en",
+  "categories": ["social", "communication", "entertainment"],
+  "screenshots": [],
+  "prefer_related_applications": false,
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}

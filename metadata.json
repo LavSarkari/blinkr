@@ -1,0 +1,8 @@
+{
+  "name": "Blinkr - Talk to Strangers!",
+  "description": "Blinkr is the ultimate anonymous random chat platform. Meet new people, talk to strangers, and find common interests in a secure and ephemeral environment.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
