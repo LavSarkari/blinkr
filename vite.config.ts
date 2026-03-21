@@ -2,14 +2,26 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 import tailwindcss from '@tailwindcss/vite';
+import { nodePolyfills } from 'vite-plugin-node-polyfills';
 
 export default defineConfig({
   define: {
-    global: 'window',
+    // Some libraries check for 'global'
+    global: 'globalThis',
   },
   plugins: [
     tailwindcss(),
     react(),
+    nodePolyfills({
+      // Whether to polyfill specific globals.
+      globals: {
+        Buffer: true,
+        global: true,
+        process: true,
+      },
+      // Whether to polyfill Node.js built-in modules.
+      protocolImports: true,
+    }),
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg'],
@@ -85,4 +97,12 @@ export default defineConfig({
     sourcemap: false,
     cssMinify: true,
   },
+  // Ensure polyfills are available during development
+  optimizeDeps: {
+    esbuildOptions: {
+      define: {
+        global: 'globalThis'
+      }
+    }
+  }
 });

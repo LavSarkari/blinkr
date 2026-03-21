@@ -65,6 +65,7 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [swipeDirection, setSwipeDirection] = useState(0);
   const [activePage, setActivePage] = useState<'security' | 'privacy' | 'terms' | null>(null);
+  const [isConnected, setIsConnected] = useState(socket.connected);
   const [settings, setSettings] = useState({
     soundEnabled: true,
     enterToSend: true,
@@ -95,6 +96,27 @@ export default function App() {
     // Initialize sounds
     matchSoundRef.current = new Audio('https://assets.mixkit.co/active_storage/sfx/2358/2358-preview.mp3');
     messageSoundRef.current = new Audio('https://assets.mixkit.co/active_storage/sfx/2354/2354-preview.mp3');
+
+    // Connection status tracking
+    const onConnect = () => {
+      console.log('✅ Socket connected:', socket.id);
+      setIsConnected(true);
+    };
+    const onDisconnect = () => {
+      console.log('❌ Socket disconnected');
+      setIsConnected(false);
+    };
+    const onConnectError = (err: any) => {
+      console.error('⚠️ Socket connection error:', err);
+      setIsConnected(false);
+    };
+
+    // Explicitly sync initial state
+    setIsConnected(socket.connected);
+
+    socket.on("connect", onConnect);
+    socket.on("disconnect", onDisconnect);
+    socket.on("connect_error", onConnectError);
 
     socket.on("online_count", (count: number) => {
       setOnlineCount(count);
@@ -157,12 +179,30 @@ export default function App() {
       setIsPartnerTyping(data.isTyping);
     });
 
+    socket.on("receive_reaction", (data: { type: string; x: number; y: number }) => {
+      if (data.type === 'heart') {
+        const newHearts = Array.from({ length: 8 }).map((_, i) => ({
+          id: Date.now() + i + Math.random(),
+          x: data.x + (Math.random() - 0.5) * 40,
+          y: data.y + (Math.random() - 0.5) * 40,
+        }));
+        setHearts(prev => [...prev, ...newHearts]);
+        setTimeout(() => {
+          setHearts(prev => prev.filter(h => !newHearts.find(nh => nh.id === h.id)));
+        }, 1500);
+      }
+    });
+
     return () => {
+      socket.off("connect", onConnect);
+      socket.off("disconnect", onDisconnect);
+      socket.off("connect_error", onConnectError);
       socket.off("online_count");
       socket.off("match_found");
       socket.off("match_msg");
       socket.off("partner_left");
       socket.off("partner_typing");
+      socket.off("receive_reaction");
       socket.off("webrtc_signal");
       destroyPeer();
     };
@@ -177,6 +217,15 @@ export default function App() {
       const peer = new Peer({
         initiator,
         trickle: false,
+        config: {
+          iceServers: [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:stun1.l.google.com:19302' },
+            { urls: 'stun:stun2.l.google.com:19302' },
+            { urls: 'stun:stun3.l.google.com:19302' },
+            { urls: 'stun:stun4.l.google.com:19302' },
+          ]
+        },
         stream,
       });
 
@@ -390,6 +439,17 @@ export default function App() {
       y: y + (Math.random() - 0.5) * 40,
     }));
     setHearts(prev => [...prev, ...newHearts]);
+    
+    // Emit reaction to partner
+    if (currentMatch) {
+      socket.emit("send_reaction", { 
+        roomId: currentMatch.roomId, 
+        type: 'heart', 
+        x, 
+        y 
+      });
+    }
+
     setTimeout(() => {
       setHearts(prev => prev.filter(h => !newHearts.find(nh => nh.id === h.id)));
     }, 1500);
@@ -397,6 +457,20 @@ export default function App() {
 
   return (
     <div className="flex flex-col h-screen w-full bg-[#000000] text-white font-sans selection:bg-blue-500/30 overflow-hidden relative">
+      {/* Connection Status Banner */}
+      <AnimatePresence>
+        {!isConnected && (
+          <motion.div
+            initial={{ y: -60, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: -60, opacity: 0 }}
+            className="fixed top-0 left-0 right-0 z-[200] bg-red-600/90 backdrop-blur-xl px-4 py-3 flex items-center justify-center gap-2 safe-top"
+          >
+            <span className="w-2 h-2 bg-white rounded-full animate-pulse" />
+            <span className="text-[11px] font-black text-white uppercase tracking-widest">Reconnecting to server...</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
       {/* Premium Mesh Background */}
       <div className="absolute inset-0 z-0 pointer-events-none overflow-hidden h-full w-full">
         <motion.div 
@@ -667,7 +741,9 @@ export default function App() {
                 >
                   <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-white/5 backdrop-blur-md rounded-full border border-white/10 shadow-[0_0_15px_rgba(255,255,255,0.05)]">
                     <div className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse shadow-[0_0_8px_rgba(52,211,153,0.8)]" />
-                    <span className="text-[10px] font-bold text-white uppercase tracking-widest">Live Network Active</span>
+                    <span className="text-[10px] font-bold text-white uppercase tracking-widest">
+                      {onlineCount > 0 ? `${onlineCount} ${onlineCount === 1 ? 'User' : 'Users'} Online` : 'Live Network Active'}
+                    </span>
                   </div>
                 </motion.div>
                 

@@ -12,6 +12,8 @@ const isProd = process.env.NODE_ENV === "production";
 
 async function startServer() {
   const app = express();
+  app.set("trust proxy", 1);
+  app.disable("x-powered-by");
 
   // Security headers
   app.use((req, res, next) => {
@@ -34,7 +36,8 @@ async function startServer() {
 
   const io = new Server(httpServer, {
     cors: {
-      origin: isProd ? false : "*",
+      origin: "*",
+      methods: ["GET", "POST"]
     },
     pingTimeout: 20000,
     pingInterval: 25000,
@@ -88,14 +91,17 @@ async function startServer() {
   io.on("connection", (socket) => {
     const clientIp = socket.handshake.headers["x-forwarded-for"] as string || socket.handshake.address;
     
+    console.log(`🔌 New connection: ${socket.id} (IP: ${clientIp})`);
+
     if (!checkRateLimit(clientIp)) {
+      console.log(`🚫 Rate limit hit for ${clientIp}`);
       socket.emit("error", { message: "Rate limit exceeded. Please try again later." });
       socket.disconnect(true);
       return;
     }
 
     if (!isProd) {
-      console.log("User connected:", socket.id);
+      console.log("User authorized:", socket.id);
     }
     broadcastOnlineCount();
 
@@ -275,6 +281,10 @@ async function startServer() {
     // WebRTC Signaling
     socket.on("webrtc_signal", (data: { roomId: string; signal: any }) => {
       socket.to(data.roomId).emit("webrtc_signal", { signal: data.signal });
+    });
+
+    socket.on("send_reaction", (data: { roomId: string; type: string; x: number; y: number }) => {
+      socket.to(data.roomId).emit("receive_reaction", data);
     });
 
     socket.on("leave_match", (roomId: string) => {
