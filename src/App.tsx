@@ -315,7 +315,7 @@ export default function App() {
     }
   };
 
-  const initiatePeer = (roomId: string, initiator: boolean, channel: any) => {
+  const initiatePeer = (roomId: string, initiator: boolean, channel: any, stream: MediaStream) => {
     if (peerRef.current) return; // Prevent double initialization
 
     try {
@@ -329,7 +329,7 @@ export default function App() {
             { urls: 'stun:stun2.l.google.com:19302' },
           ]
         },
-        stream: localStream || undefined,
+        stream: stream,
       });
 
       peer.on('signal', (signal) => {
@@ -1525,12 +1525,7 @@ export default function App() {
                  showNotification("You sent a reaction ❤️", "success");
               }}
             >
-              {/* Hyper-Transition Blur Overlay */}
-              <motion.div 
-                initial={{ opacity: 0, backdropFilter: "blur(0px)" }}
-                animate={isSearching ? { opacity: 1, backdropFilter: "blur(40px)" } : { opacity: 0, backdropFilter: "blur(0px)" }}
-                className="absolute inset-0 z-[100] pointer-events-none bg-blue-500/5 transition-all duration-300"
-              />
+
               <div className="absolute inset-0 z-0 pointer-events-none">
                 {chatMode === 'video' ? (
                   <>
