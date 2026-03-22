@@ -1443,12 +1443,14 @@ export default function App() {
                    )}
                 </div>
 
-                <div className="flex-1" />
-                
-                {/* Scrollable messages container - allow pointer events */}
-                <div className="w-full max-w-4xl mx-auto px-4 sm:px-6 space-y-3 max-h-[60vh] overflow-y-auto pointer-events-auto pb-4 hide-scrollbar"
-                     onPointerDown={e => e.stopPropagation()} /* Prevents drag gesture stealing focus */
-                >
+                <div className="flex-1 w-full overflow-hidden relative flex flex-col justify-end pointer-events-none">
+                  {/* Top fade out to prevent hard cut */}
+                  <div className="absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-[#000000] to-transparent z-20 pointer-events-none" />
+                  
+                  {/* Scrollable messages container - allow pointer events */}
+                  <div className="w-full max-w-4xl mx-auto px-4 sm:px-6 space-y-3 max-h-[75vh] overflow-y-auto pointer-events-auto pb-8 hide-scrollbar relative z-10"
+                       onPointerDown={e => e.stopPropagation()} /* Prevents drag gesture stealing focus */
+                  >
                   {matchMessages.map((msg, idx) => (
                     <motion.div 
                       key={msg.id || idx}
@@ -1500,8 +1502,9 @@ export default function App() {
                   )}
                   <div ref={chatEndRef} />
                 </div>
+              </div>
 
-                {/* Fixed bottom input bar */}
+              {/* Fixed bottom input bar */}
                 <div className="px-4 sm:px-6 w-full max-w-4xl mx-auto pointer-events-auto z-50">
                   <div className="flex items-center gap-2 sm:gap-3 bg-[#000000]/90 backdrop-blur-3xl p-2 rounded-2xl border border-[#1f1f1f] shadow-2xl" onPointerDown={e => e.stopPropagation()}>
                     <button 
