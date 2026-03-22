@@ -766,17 +766,14 @@ export default function App() {
               animate={{ y: 0, opacity: 1 }}
               exit={{ y: -50, opacity: 0 }}
               transition={{ type: "spring", stiffness: 300, damping: 20 }}
-              className="relative w-full max-w-[1100px] flex items-center justify-between gap-4 sm:gap-6 p-1.5 bg-[#050505]/60 backdrop-blur-3xl rounded-[2rem] border border-white/5 shadow-[0_10px_40px_-10px_rgba(59,130,246,0.15)] pointer-events-auto group"
+              className="relative w-full max-w-[1100px] flex items-center justify-between pointer-events-auto"
               role="banner"
             >
           {/* SEO Hidden H1 */}
           <h1 className="sr-only">Blinkr | Free Omegle Alternative | Random Video Chat with Strangers</h1>
-
-          {/* Subtle Ambient Inner Glow that reacts to hover */}
-          <div className="absolute inset-0 rounded-[2rem] bg-gradient-to-r from-blue-500/0 via-blue-500/5 to-purple-500/0 opacity-0 group-hover:opacity-100 transition-opacity duration-700 blur-md pointer-events-none" />
           
           {/* Left: Branding */}
-          <div className="flex items-center gap-3 pl-3 relative z-10">
+          <div className="flex items-center gap-3">
             <motion.div 
               whileHover={{ rotate: 180 }}
               transition={{ duration: 0.5, ease: "easeInOut" }}
@@ -793,7 +790,7 @@ export default function App() {
 
 
           {/* Right: Actions */}
-          <div className="flex items-center gap-1 pr-1.5 relative z-10">
+          <div className="flex items-center gap-2">
             <motion.button 
               whileHover={{ scale: 1.1, backgroundColor: "rgba(255,255,255,0.05)" }}
               whileTap={{ scale: 0.9 }}
@@ -813,21 +810,6 @@ export default function App() {
             >
               <Settings size={16} />
             </motion.button>
-            
-            {/* The bold call to action */}
-            {!isSearching && (
-              <motion.button 
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                onClick={() => {
-                  if (currentMatch) leaveMatch();
-                  startRandomSearch();
-                }}
-                className="hidden lg:flex px-6 h-10 ml-2 items-center justify-center bg-white text-black rounded-full text-xs font-black uppercase tracking-widest shadow-[0_0_20px_rgba(255,255,255,0.15)] transition-all hover:bg-gradient-to-r hover:from-blue-500 hover:to-blue-600 hover:text-white hover:shadow-blue-500/30 ring-1 ring-white/10"
-              >
-                Start Chat
-              </motion.button>
-            )}
           </div>
         </motion.header>
       </div>
@@ -1556,37 +1538,65 @@ export default function App() {
 
               {/* OVERLAY UI (messages float from bottom) */}
               <div className="relative z-10 flex flex-col justify-end h-full pointer-events-none pb-[calc(1.5rem+env(safe-area-inset-bottom))] lg:pb-10">
-                {/* Header indicators - WhatsApp Style Media Toggles */}
-                <div className="absolute top-[env(safe-area-inset-top,1.5rem)] pt-6 inset-x-0 flex flex-row items-center justify-center gap-3 pointer-events-auto">
-                    {chatMode === 'video' && (
-                      <>
-                        <motion.button 
-                          whileHover={{ scale: 1.05 }}
-                          whileTap={{ scale: 0.95 }}
-                          onClick={toggleMic}
-                          className={cn(
-                            "w-11 h-11 flex items-center justify-center rounded-full backdrop-blur-2xl border transition-all shadow-xl",
-                            isMuted ? "bg-red-500/20 border-red-500/40 text-red-500" : "bg-white/5 border-white/10 text-white"
-                          )}
-                        >
-                          {isMuted ? <VolumeX size={18} /> : <Volume2 size={18} />}
-                        </motion.button>
-                        <motion.button 
-                          whileHover={{ scale: 1.05 }}
-                          whileTap={{ scale: 0.95 }}
-                          onClick={toggleCamera}
-                          className={cn(
-                            "w-11 h-11 flex items-center justify-center rounded-full backdrop-blur-2xl border transition-all shadow-xl",
-                            !isCameraOn ? "bg-red-500/20 border-red-500/40 text-red-500" : "bg-white/5 border-white/10 text-white"
-                          )}
-                        >
-                          {!isCameraOn ? <Plus className="rotate-45" size={18} /> : <Video size={18} />}
-                        </motion.button>
-                      </>
-                    )}
-                    <div className="lg:hidden flex items-center gap-2 px-4 h-11 bg-white/5 backdrop-blur-2xl border border-white/10 rounded-full text-[10px] font-black uppercase tracking-widest text-[#9ca3af]">
-                      Blinkr Live
+                {/* WhatsApp-Style Top Header */}
+                <div className="absolute top-0 inset-x-0 bg-[#111]/95 backdrop-blur-xl border-b border-white/5 z-50 pointer-events-auto flex items-center justify-between px-4 h-[60px] pt-[env(safe-area-inset-top,0px)]">
+                  <div className="flex items-center gap-3">
+                    <button 
+                      onClick={leaveMatch}
+                      className="p-2 -ml-2 text-white/70 hover:text-white transition-colors"
+                    >
+                      <ChevronLeft size={24} />
+                    </button>
+                    <div className="relative">
+                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center text-white font-bold shadow-lg">
+                        S
+                      </div>
+                      <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-[#111] rounded-full" />
                     </div>
+                    <div className="flex flex-col">
+                      <span className="text-white font-bold text-base leading-tight">Stranger</span>
+                      <span className="text-green-500 text-[11px] font-black tracking-widest uppercase">Online</span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-1">
+                    <button 
+                      onClick={() => {
+                        if (chatMode !== 'video') {
+                          showNotification("Switch to Video Chat from the home screen to use the camera.", "error");
+                        } else {
+                          toggleCamera();
+                        }
+                      }}
+                      className={cn(
+                        "p-2.5 rounded-full transition-colors",
+                        isCameraOn && chatMode === 'video' ? "text-blue-400 hover:bg-white/5" : "text-white/40 hover:text-white hover:bg-white/5"
+                      )}
+                    >
+                      <Video size={20} />
+                    </button>
+                    <button 
+                      onClick={() => {
+                        if (chatMode !== 'video') {
+                          showNotification("Switch to Video Chat from the home screen to use the microphone.", "error");
+                        } else {
+                          toggleMic();
+                        }
+                      }}
+                      className={cn(
+                        "p-2.5 rounded-full transition-colors",
+                        !isMuted && chatMode === 'video' ? "text-blue-400 hover:bg-white/5" : "text-white/40 hover:text-white hover:bg-white/5"
+                      )}
+                    >
+                      <Volume2 size={20} />
+                    </button>
+                    <button 
+                      onClick={() => setIsSettingsOpen(true)}
+                      className="p-2.5 text-white/40 hover:text-white hover:bg-white/5 rounded-full transition-colors ml-1"
+                    >
+                      <Settings size={20} />
+                    </button>
+                  </div>
                 </div>
 
                 <div className="flex-1 w-full overflow-hidden relative flex flex-col justify-end pointer-events-none">
