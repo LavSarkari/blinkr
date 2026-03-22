@@ -21,7 +21,8 @@ import {
   Monitor,
   Smartphone,
   Globe,
-  Activity
+  Activity,
+  Link2
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -80,6 +81,7 @@ export default function App() {
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
   const [isMuted, setIsMuted] = useState(false);
   const [isCameraOn, setIsCameraOn] = useState(true);
+  const [inviteId, setInviteId] = useState<string | null>(null);
   const [hearts, setHearts] = useState<{ id: number; x: number; y: number }[]>([]);
   const peerRef = useRef<Peer.Instance | null>(null);
   const localVideoRef = useRef<HTMLVideoElement>(null);
@@ -346,45 +348,75 @@ export default function App() {
     }
   }, [matchMessages, isPartnerTyping]);
 
-  const startRandomSearch = async (spyQuestion?: string) => {
+  useEffect(() => {
+    // Check for invite link on mount
+    const params = new URLSearchParams(window.location.search);
+    const invite = params.get('invite');
+    if (invite) {
+      setInviteId(invite);
+      // Clean up URL without reload
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }, []);
+
+  const startRandomSearch = async () => {
     setIsSearching(true);
     setIsDisconnected(false);
-    setIsQuestionMatch(!!spyQuestion);
-    setCurrentQuestion(spyQuestion || null);
     setStopState('stop');
 
     try {
-      // 1. Check for an existing waiting user (Atomic-ish Match)
-      const { data: potentialMatches, error: searchError } = await supabase
-        .from('waiting_room')
-        .select('*')
-        .eq('chat_mode', chatMode)
-        .neq('socket_id', tabId)
-        .order('created_at', { ascending: true })
-        .limit(1);
+      let matchedUser = null;
+      let findError = null;
 
-      if (!searchError && potentialMatches && potentialMatches.length > 0) {
-        const partner = potentialMatches[0];
+      if (inviteId) {
+        // Search for a specific invite room
+        const { data, error } = await supabase
+          .from('waiting_room')
+          .select('*')
+          .eq('room_id', inviteId)
+          .neq('socket_id', tabId)
+          .limit(1)
+          .maybeSingle();
+        matchedUser = data;
+        findError = error;
+      } else {
+        // Search for a random match
+        const { data, error } = await supabase
+          .from('waiting_room')
+          .select('*')
+          .eq('chat_mode', chatMode)
+          .neq('socket_id', tabId)
+          .filter('interests', interests.length > 0 ? 'cs' : 'is', interests.length > 0 ? `{${interests.join(',')}}` : 'null')
+          .order('created_at', { ascending: true })
+          .limit(1)
+          .maybeSingle();
+        matchedUser = data;
+        findError = error;
+      }
+
+      if (!findError && matchedUser) {
         // Attempt to claim this partner by deleting them
         const { error: claimError, count } = await supabase
           .from('waiting_room')
-          .delete({ count: 'exact' })
-          .eq('socket_id', partner.socket_id);
+          .delete()
+          .eq('socket_id', matchedUser.socket_id)
+          .select();
 
         if (!claimError && count && count > 0) {
           // Match successful!
-          const roomId = nanoid();
+          const roomId = matchedUser.room_id;
           const matchData = {
             roomId,
             users: [
               { id: tabId, session },
-              { id: partner.socket_id, session: { id: partner.socket_id, name: 'Stranger' } } // Simplified for partner
+              { id: matchedUser.socket_id, session: { id: matchedUser.socket_id, name: 'Stranger' } }
             ],
-            question: spyQuestion || partner.question
+            commonInterests: matchedUser.interests,
+            question: question || matchedUser.question
           };
 
           // Notify partner
-          await supabase.channel(`user_${partner.socket_id}`).send({
+          await supabase.channel(`user_${matchedUser.socket_id}`).send({
             type: 'broadcast',
             event: 'match_found',
             payload: matchData
@@ -392,28 +424,48 @@ export default function App() {
 
           // Join and handle locally
           handleMatchFound(matchData);
+          setInviteId(null); // Clear invite state on match
           return;
         }
       }
 
-      // 2. If no match found, put self in waiting room
+      // If no match found (or claim failed), put self in waiting room
+      const currentRoomId = inviteId || nanoid();
       await supabase.from('waiting_room').upsert({
         socket_id: tabId,
-        interests,
+        interests: inviteId ? [] : interests, // Interests only for random search
         chat_mode: chatMode,
-        question: spyQuestion,
+        room_id: currentRoomId,
         created_at: new Date().toISOString()
       });
 
     } catch (err) {
-      console.error('Search error:', err);
+      console.error('Search error details:', err);
+      showNotification("Matchmaking error. Please refresh and try again.", "error");
       setIsSearching(false);
     }
+    // If search ends without a match, and it was an invite search, clear inviteId
+    if (!currentMatch && inviteId) {
+      setInviteId(null);
+    }
+  };
+
+  const createInviteLink = () => {
+    const id = nanoid(10);
+    setInviteId(id);
+    const link = `${window.location.origin}?invite=${id}`;
+    navigator.clipboard.writeText(link);
+    showNotification("Invite link copied! Share it with a friend.", "success");
+    startRandomSearch();
   };
 
   const cancelSearch = async () => {
     setIsSearching(false);
-    await supabase.from('waiting_room').delete().eq('socket_id', tabId);
+    setInviteId(null); // Clear invite on cancel
+    await supabase
+      .from('waiting_room')
+      .delete()
+      .eq('socket_id', tabId);
   };
 
   const leaveMatch = async () => {
@@ -1002,6 +1054,18 @@ export default function App() {
                       </motion.button>
                     ))}
                   </div>
+
+                  {/* Create Invite Link Button */}
+                  <motion.button
+                    whileHover={{ scale: 1.01 }}
+                    whileTap={{ scale: 0.99 }}
+                    onClick={createInviteLink}
+                    className="w-full py-4 bg-gradient-to-r from-blue-600/10 to-indigo-600/10 hover:from-blue-600/20 hover:to-indigo-600/20 border border-blue-500/20 rounded-2xl flex items-center justify-center gap-3 transition-all group mt-4"
+                  >
+                    <Link2 size={18} className="text-blue-500" />
+                    <span className="text-[11px] font-black text-white uppercase tracking-[0.2em]">Create Private Invite Link</span>
+                    <div className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(59,130,246,0.6)]" />
+                  </motion.button>
                 </div>
 
                 {/* Sidebar Info */}
@@ -1336,9 +1400,11 @@ export default function App() {
                 </div>
                 
                 <p className="text-[#666] font-bold text-xs uppercase tracking-[0.25em] max-w-xs mx-auto">
-                  {interests.length > 0 
-                    ? `Filtering: ${interests.join(' · ')}`
-                    : "Looking for your next conversation"}
+                  {inviteId 
+                    ? "Waiting for your friend to join..."
+                    : interests.length > 0 
+                      ? `Filtering: ${interests.join(' · ')}`
+                      : "Looking for your next conversation"}
                 </p>
 
                 {/* Animated dots row */}
@@ -1659,10 +1725,9 @@ export default function App() {
                   Cancel
                 </button>
                 <button 
-                  disabled={!questionInput.trim()}
                   onClick={() => {
                     setShowQuestionModal(false);
-                    startRandomSearch(questionInput.trim());
+                    startRandomSearch();
                     setQuestionInput("");
                   }}
                   className="w-full sm:flex-1 py-3 sm:py-4 bg-gradient-to-r from-blue-600 to-blue-500 text-white rounded-xl font-bold text-xs uppercase tracking-widest hover:opacity-90 transition-all disabled:opacity-20 active:scale-[0.98] min-h-[48px]"
