@@ -173,6 +173,10 @@ export default function App() {
     // Join the match's private channel
     const channel = supabase.channel(`room_${data.roomId}`);
     
+    // Tracking for handshake
+    let partnerStreamReady = false;
+    let myStreamReady = false;
+
     channel
       .on('broadcast', { event: 'message' }, (payload) => {
         setMatchMessages(prev => [...prev, payload.payload]);
@@ -193,18 +197,45 @@ export default function App() {
           peerRef.current.signal(payload.payload.signal);
         }
       })
+      .on('broadcast', { event: 'peer_ready' }, () => {
+        partnerStreamReady = true;
+        if (myStreamReady && chatMode === 'video') {
+          const isInitiator = data.users[0].id === tabId;
+          initiatePeer(data.roomId, isInitiator, channel);
+        }
+      })
       .on('broadcast', { event: 'partner_left' }, () => {
         handlePartnerLeft();
       })
-      .subscribe();
+      .subscribe(async (status) => {
+        if (status === 'SUBSCRIBED' && chatMode === 'video') {
+          // Get local stream and notify partner
+          try {
+            const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+            setLocalStream(stream);
+            if (localVideoRef.current) localVideoRef.current.srcObject = stream;
+            myStreamReady = true;
+            
+            // Notify partner we are ready
+            channel.send({
+              type: 'broadcast',
+              event: 'peer_ready',
+              payload: {}
+            });
+
+            // If partner was already ready, start!
+            if (partnerStreamReady) {
+              const isInitiator = data.users[0].id === tabId;
+              initiatePeer(data.roomId, isInitiator, channel);
+            }
+          } catch (err) {
+            console.error('Handshake camera error:', err);
+            showNotification('Camera access failed.', 'error');
+          }
+        }
+      });
 
     setCurrentChannel(channel);
-
-    // If video mode, initiate WebRTC
-    if (chatMode === 'video') {
-      const isInitiator = data.users[0].id === tabId;
-      initiatePeer(data.roomId, isInitiator, channel);
-    }
   };
 
   const handleReceiveHeart = (data: { x: number; y: number }) => {
@@ -232,12 +263,10 @@ export default function App() {
     }
   };
 
-  const initiatePeer = async (roomId: string, initiator: boolean, channel: any) => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-      setLocalStream(stream);
-      if (localVideoRef.current) localVideoRef.current.srcObject = stream;
+  const initiatePeer = (roomId: string, initiator: boolean, channel: any) => {
+    if (peerRef.current) return; // Prevent double initialization
 
+    try {
       const peer = new Peer({
         initiator,
         trickle: false,
@@ -248,7 +277,7 @@ export default function App() {
             { urls: 'stun:stun2.l.google.com:19302' },
           ]
         },
-        stream,
+        stream: localStream || undefined,
       });
 
       peer.on('signal', (signal) => {
