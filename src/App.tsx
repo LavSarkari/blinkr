@@ -78,6 +78,8 @@ export default function App() {
   // Video Chat State
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
+  const [isMuted, setIsMuted] = useState(false);
+  const [isCameraOn, setIsCameraOn] = useState(true);
   const [hearts, setHearts] = useState<{ id: number; x: number; y: number }[]>([]);
   const peerRef = useRef<Peer.Instance | null>(null);
   const localVideoRef = useRef<HTMLVideoElement>(null);
@@ -260,6 +262,29 @@ export default function App() {
     if (currentChannel) {
       currentChannel.unsubscribe();
       setCurrentChannel(null);
+    }
+    // Reset media states
+    setIsMuted(false);
+    setIsCameraOn(true);
+  };
+
+  const toggleMic = () => {
+    if (localStream) {
+      const audioTrack = localStream.getAudioTracks()[0];
+      if (audioTrack) {
+        audioTrack.enabled = !audioTrack.enabled;
+        setIsMuted(!audioTrack.enabled);
+      }
+    }
+  };
+
+  const toggleCamera = () => {
+    if (localStream) {
+      const videoTrack = localStream.getVideoTracks()[0];
+      if (videoTrack) {
+        videoTrack.enabled = !videoTrack.enabled;
+        setIsCameraOn(videoTrack.enabled);
+      }
     }
   };
 
@@ -654,14 +679,17 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      {/* Dynamic Island Header */}
-      <div className="fixed top-6 left-0 right-0 z-50 flex justify-center px-4 w-full pointer-events-none">
-        <motion.header 
-          initial={{ y: -50, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          transition={{ type: "spring", stiffness: 300, damping: 20 }}
-          className="relative w-full max-w-[1100px] flex items-center justify-between gap-4 sm:gap-6 p-1.5 bg-[#050505]/60 backdrop-blur-3xl rounded-[2rem] border border-white/5 shadow-[0_10px_40px_-10px_rgba(59,130,246,0.15)] pointer-events-auto group"
-        >
+      {/* Dynamic Island Header - HIDE DURING MATCH OR SEARCHING */}
+      <AnimatePresence>
+        {!currentMatch && !isSearching && !isDisconnected && (
+          <div className="fixed top-6 left-0 right-0 z-50 flex justify-center px-4 w-full pointer-events-none">
+            <motion.header 
+              initial={{ y: -50, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: -50, opacity: 0 }}
+              transition={{ type: "spring", stiffness: 300, damping: 20 }}
+              className="relative w-full max-w-[1100px] flex items-center justify-between gap-4 sm:gap-6 p-1.5 bg-[#050505]/60 backdrop-blur-3xl rounded-[2rem] border border-white/5 shadow-[0_10px_40px_-10px_rgba(59,130,246,0.15)] pointer-events-auto group"
+            >
           {/* Subtle Ambient Inner Glow that reacts to hover */}
           <div className="absolute inset-0 rounded-[2rem] bg-gradient-to-r from-blue-500/0 via-blue-500/5 to-purple-500/0 opacity-0 group-hover:opacity-100 transition-opacity duration-700 blur-md pointer-events-none" />
           
@@ -720,6 +748,8 @@ export default function App() {
           </div>
         </motion.header>
       </div>
+        )}
+      </AnimatePresence>
 
       {/* Main Chat Area */}
       <main className="flex-1 flex flex-col min-h-0 relative overflow-hidden">
@@ -1429,18 +1459,37 @@ export default function App() {
 
               {/* OVERLAY UI (messages float from bottom) */}
               <div className="relative z-10 flex flex-col justify-end h-full pointer-events-none pb-[calc(1.5rem+env(safe-area-inset-bottom))] lg:pb-10">
-                {/* Header indicators */}
-                <div className="absolute top-[env(safe-area-inset-top,1rem)] pt-6 inset-x-0 flex flex-col items-center gap-2 pointer-events-none">
-                   <div className="px-4 py-1.5 bg-[#000000]/80 backdrop-blur-xl rounded-full text-[10px] uppercase tracking-widest font-black text-[#9ca3af] border border-[#1f1f1f] shadow-lg flex items-center gap-2">
-                     <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-                     {chatMode === 'video' ? 'Video Session Active' : 'Encrypted Session Active'}
-                   </div>
-                   {isQuestionMatch && currentQuestion && (
-                     <div className="px-6 py-3 max-w-sm mx-4 text-center bg-[#0a0a0a]/90 backdrop-blur-xl rounded-2xl border border-[#1f1f1f] shadow-2xl mt-4 pointer-events-auto">
-                       <span className="text-blue-500 text-[9px] uppercase tracking-widest font-black block mb-1 flex items-center justify-center gap-1"><Hash size={10} /> Topic</span>
-                       <span className="text-white text-sm font-bold italic block">"{currentQuestion}"</span>
-                     </div>
-                   )}
+                {/* Header indicators - WhatsApp Style Media Toggles */}
+                <div className="absolute top-[env(safe-area-inset-top,1.5rem)] pt-6 inset-x-0 flex flex-row items-center justify-center gap-3 pointer-events-auto">
+                    {chatMode === 'video' && (
+                      <>
+                        <motion.button 
+                          whileHover={{ scale: 1.05 }}
+                          whileTap={{ scale: 0.95 }}
+                          onClick={toggleMic}
+                          className={cn(
+                            "w-11 h-11 flex items-center justify-center rounded-full backdrop-blur-2xl border transition-all shadow-xl",
+                            isMuted ? "bg-red-500/20 border-red-500/40 text-red-500" : "bg-white/5 border-white/10 text-white"
+                          )}
+                        >
+                          {isMuted ? <VolumeX size={18} /> : <Volume2 size={18} />}
+                        </motion.button>
+                        <motion.button 
+                          whileHover={{ scale: 1.05 }}
+                          whileTap={{ scale: 0.95 }}
+                          onClick={toggleCamera}
+                          className={cn(
+                            "w-11 h-11 flex items-center justify-center rounded-full backdrop-blur-2xl border transition-all shadow-xl",
+                            !isCameraOn ? "bg-red-500/20 border-red-500/40 text-red-500" : "bg-white/5 border-white/10 text-white"
+                          )}
+                        >
+                          {!isCameraOn ? <Plus className="rotate-45" size={18} /> : <Video size={18} />}
+                        </motion.button>
+                      </>
+                    )}
+                    <div className="lg:hidden flex items-center gap-2 px-4 h-11 bg-white/5 backdrop-blur-2xl border border-white/10 rounded-full text-[10px] font-black uppercase tracking-widest text-[#9ca3af]">
+                      Blinkr Live
+                    </div>
                 </div>
 
                 <div className="flex-1 w-full overflow-hidden relative flex flex-col justify-end pointer-events-none">
