@@ -825,7 +825,7 @@ export default function App() {
               animate={{ y: 0, opacity: 1 }}
               exit={{ y: -50, opacity: 0 }}
               transition={{ type: "spring", stiffness: 300, damping: 20 }}
-              className="relative w-full max-w-[1100px] flex items-center justify-between pointer-events-auto"
+              className="relative w-full max-w-[1100px] flex items-center justify-between pointer-events-auto bg-[#0a0a0a]/60 backdrop-blur-xl border border-white/10 rounded-full px-6 py-3 shadow-[0_8px_32px_rgba(0,0,0,0.4)]"
               role="banner"
             >
           {/* SEO Hidden H1 */}
@@ -1103,9 +1103,9 @@ export default function App() {
                   {/* Mode Selection Tabs */}
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 relative z-10">
                     {[
-                      { mode: 'text' as const, label: 'Text Chat', sub: 'Instant', icon: <MessageSquare size={28} className="text-blue-500 shrink-0 relative z-10" />, color: 'blue', onClick: () => { setChatMode('text'); startRandomSearch(); } },
+                      { mode: 'text' as const, label: 'Text Chat', sub: 'Instant', icon: <MessageSquare size={28} className="text-blue-500 shrink-0 relative z-10" />, color: 'blue', onClick: () => { setChatMode('text'); } },
                       { mode: 'spy' as const, label: 'Spy Mode', sub: 'Discuss', icon: <Hash size={28} className="group-hover/btn:text-purple-400 transition-colors shrink-0 relative z-10" />, color: 'purple', onClick: () => setShowQuestionModal(true) },
-                      { mode: 'video' as const, label: 'Video Chat', sub: 'Face-to-face', icon: <Video size={28} className="group-hover/btn:text-emerald-400 transition-colors shrink-0 relative z-10" />, color: 'emerald', onClick: () => { setChatMode('video'); startRandomSearch(); } },
+                      { mode: 'video' as const, label: 'Video Chat', sub: 'Face-to-face', icon: <Video size={28} className="group-hover/btn:text-emerald-400 transition-colors shrink-0 relative z-10" />, color: 'emerald', onClick: () => { setChatMode('video'); } },
                     ].map((item, i) => (
                       <motion.button
                         key={item.mode}
@@ -1114,9 +1114,15 @@ export default function App() {
                         transition={{ delay: 0.5 + i * 0.1, duration: 0.4 }}
                         whileHover={{ scale: 1.03, y: -3 }}
                         whileTap={{ scale: 0.96 }}
-                        onClick={item.onClick}
-                        className={`group/btn flex sm:flex-col items-center sm:justify-center p-5 sm:p-6 gap-3 sm:gap-4 bg-[#0a0a0a] text-${item.mode === 'text' ? 'white' : '[#9ca3af]'} rounded-[1.5rem] transition-all border border-[#1a1a1a] hover:border-${item.color}-500/40 hover:bg-[#0f0f0f] w-full text-left sm:text-center relative overflow-hidden cursor-pointer`}
-                      >
+                         onClick={item.onClick}
+                         className={`group/btn flex sm:flex-col items-center sm:justify-center p-5 sm:p-6 gap-3 sm:gap-4 bg-[#0a0a0a] text-${chatMode === item.mode ? 'white' : '[#9ca3af]'} rounded-[1.5rem] transition-all border ${chatMode === item.mode ? `border-${item.color}-500/60 ring-2 ring-${item.color}-500/20 shadow-[0_0_30px_rgba(59,130,246,0.1)]` : 'border-[#1a1a1a]'} hover:border-${item.color}-500/40 hover:bg-[#0f0f0f] w-full text-left sm:text-center relative overflow-hidden cursor-pointer`}
+                       >
+                         {chatMode === item.mode && (
+                           <motion.div 
+                             layoutId="activeMode"
+                             className={`absolute inset-0 bg-${item.color}-500/5 z-0`}
+                           />
+                         )}
                         <div className={`absolute inset-0 bg-gradient-to-b from-${item.color}-500/5 to-transparent opacity-0 group-hover/btn:opacity-100 transition-opacity duration-300`} />
                         {item.icon}
                         <div className="relative z-10">
@@ -1125,6 +1131,27 @@ export default function App() {
                         </div>
                       </motion.button>
                     ))}
+                  </div>
+                  
+                  {/* Desktop Primary CTA */}
+                  <div className="hidden lg:block pt-4">
+                    <motion.button 
+                      whileHover={{ scale: 1.02 }}
+                      whileTap={{ scale: 0.98 }}
+                      onClick={startRandomSearch}
+                      className="w-full flex items-center justify-center min-h-[64px] bg-gradient-to-r from-blue-600 to-blue-500 text-white rounded-[1.5rem] text-xl font-black uppercase tracking-widest shadow-[0_20px_40px_-10px_rgba(59,130,246,0.3)] hover:shadow-[0_25px_50px_-12px_rgba(59,130,246,0.4)] transition-all relative overflow-hidden group/cta"
+                    >
+                      <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent -translate-x-full group-hover/cta:animate-[shimmer_2s_infinite]" />
+                      <div className="flex items-center gap-3 relative z-10">
+                        <span>Start Pulsing</span>
+                        <motion.div 
+                          animate={{ x: [0, 5, 0] }}
+                          transition={{ duration: 1.5, repeat: Infinity }}
+                        >
+                          <Send size={20} />
+                        </motion.div>
+                      </div>
+                    </motion.button>
                   </div>
 
                   {/* Create Invite Link Button */}
