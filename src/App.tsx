@@ -1373,7 +1373,7 @@ export default function App() {
         )}
 
         <AnimatePresence initial={false} custom={swipeDirection}>
-          {isSearching && (
+          {isSearching && !currentMatch && (
             <motion.div 
               key="searching"
               custom={swipeDirection}
