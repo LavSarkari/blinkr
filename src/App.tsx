@@ -1433,14 +1433,14 @@ export default function App() {
                       }}
                       className={cn(
                         "flex flex-col w-full",
-                        msg.senderId === socket.id ? "items-end" : "items-start"
+                        msg.senderId === tabId ? "items-end" : "items-start"
                       )}
                     >
                       <motion.div 
                         whileHover={{ scale: 1.02 }}
                         className={cn(
                           "max-w-[85%] sm:max-w-[70%] px-4 sm:px-5 py-2.5 sm:py-3 rounded-[1.4rem] shadow-xl backdrop-blur-md text-sm font-bold tracking-tight",
-                          msg.senderId === socket.id 
+                          msg.senderId === tabId 
                             ? "bg-gradient-to-br from-blue-600 to-blue-500 text-white rounded-tr-sm shadow-blue-500/10" 
                             : "bg-[#111111]/95 text-white rounded-tl-sm border border-white/5 shadow-black/50"
                         )}
@@ -1450,7 +1450,7 @@ export default function App() {
                       {msg.createdAt && (
                         <span className={cn(
                           "text-[9px] font-bold text-[#444] mt-1 px-2 uppercase tracking-wider",
-                          msg.senderId === socket.id ? "text-right" : "text-left"
+                          msg.senderId === tabId ? "text-right" : "text-left"
                         )}>
                           {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         </span>
