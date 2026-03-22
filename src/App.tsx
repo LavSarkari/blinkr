@@ -23,7 +23,8 @@ import {
   Globe,
   Link2,
   Reply,
-  Heart
+  Heart,
+  ChevronLeft
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
