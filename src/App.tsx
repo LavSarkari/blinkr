@@ -499,7 +499,7 @@ export default function App() {
         reason: 'Reported by user'
       });
     }
-    showNotification("Stranger has been reported. Thank you for keeping Stranger.io safe.", 'success');
+    showNotification("User has been reported. Thank you for keeping Blinkr safe.", 'success');
     handleStop();
     if (stopState === 'stop') handleStop(); // Trigger 'really' then 'new'
   };
@@ -527,8 +527,8 @@ export default function App() {
     if (navigator.share) {
       try {
         await navigator.share({
-          title: 'Stranger.io',
-          text: 'Talk to strangers anonymously on Stranger.io!',
+          title: 'Blinkr',
+          text: 'Talk to strangers anonymously on Blinkr!',
           url: window.location.origin,
         });
       } catch (err) {
