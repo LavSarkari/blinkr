@@ -21,8 +21,9 @@ import {
   Monitor,
   Smartphone,
   Globe,
-  Activity,
-  Link2
+  Link2,
+  Reply,
+  Heart
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -51,6 +52,7 @@ const RANDOM_QUESTIONS = [
 export default function App() {
   const [session] = useState(() => getSession());
   const [inputText, setInputText] = useState("");
+  const [replyToMsg, setReplyToMsg] = useState<any | null>(null);
   
   // Random Chat State
   const [isSearching, setIsSearching] = useState(false);
@@ -86,6 +88,9 @@ export default function App() {
   const peerRef = useRef<Peer.Instance | null>(null);
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
+  const localStreamRef = useRef<MediaStream | null>(null);
+  const myStreamReadyRef = useRef<boolean>(false);
+  const partnerStreamReadyRef = useRef<boolean>(false);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -172,6 +177,9 @@ export default function App() {
     setIsDisconnected(false);
     setMatchMessages([]);
     setStopState('stop');
+    localStreamRef.current = null;
+    myStreamReadyRef.current = false;
+    partnerStreamReadyRef.current = false;
     
     if (data.question) {
       setIsQuestionMatch(true);
@@ -202,6 +210,11 @@ export default function App() {
       .on('broadcast', { event: 'typing' }, (payload) => {
         setIsPartnerTyping(payload.payload.isTyping);
       })
+      .on('broadcast', { event: 'message_reaction' }, (payload) => {
+        setMatchMessages(prev => prev.map(m => 
+          m.id === payload.payload.messageId ? { ...m, reaction: payload.payload.reaction } : m
+        ));
+      })
       .on('broadcast', { event: 'reaction' }, (payload) => {
         if (payload.payload.type === 'heart') {
           handleReceiveHeart(payload.payload);
@@ -213,10 +226,10 @@ export default function App() {
         }
       })
       .on('broadcast', { event: 'peer_ready' }, () => {
-        partnerStreamReady = true;
-        if (myStreamReady && chatMode === 'video') {
+        partnerStreamReadyRef.current = true;
+        if (myStreamReadyRef.current && chatMode === 'video' && localStreamRef.current) {
           const isInitiator = data.users[0].id === tabId;
-          initiatePeer(data.roomId, isInitiator, channel);
+          initiatePeer(data.roomId, isInitiator, channel, localStreamRef.current);
         }
       })
       .on('broadcast', { event: 'partner_left' }, () => {
@@ -228,8 +241,9 @@ export default function App() {
           try {
             const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
             setLocalStream(stream);
+            localStreamRef.current = stream;
             if (localVideoRef.current) localVideoRef.current.srcObject = stream;
-            myStreamReady = true;
+            myStreamReadyRef.current = true;
             
             // Notify partner we are ready
             channel.send({
@@ -239,9 +253,9 @@ export default function App() {
             });
 
             // If partner was already ready, start!
-            if (partnerStreamReady) {
+            if (partnerStreamReadyRef.current) {
               const isInitiator = data.users[0].id === tabId;
-              initiatePeer(data.roomId, isInitiator, channel);
+              initiatePeer(data.roomId, isInitiator, channel, stream);
             }
           } catch (err) {
             console.error('Handshake camera error:', err);
@@ -538,7 +552,8 @@ export default function App() {
       id: nanoid(),
       content: inputText.trim(),
       senderId: tabId,
-      createdAt: Date.now()
+      createdAt: Date.now(),
+      replyTo: replyToMsg ? { id: replyToMsg.id, content: replyToMsg.content, senderId: replyToMsg.senderId } : null
     };
 
     await currentChannel.send({
@@ -549,6 +564,7 @@ export default function App() {
 
     setMatchMessages(prev => [...prev, msg]);
     setInputText("");
+    setReplyToMsg(null);
     
     // Stop typing indicator immediately on send
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
@@ -577,6 +593,20 @@ export default function App() {
       currentChannel.send({ type: 'broadcast', event: 'typing', payload: { isTyping: false } });
       lastTypingEmitRef.current = 0;
     }, 3000);
+  };
+
+  const handleMessageReact = (msgId: string, emoji: string) => {
+    if (!currentMatch || !currentChannel) return;
+
+    setMatchMessages(prev => prev.map(m => 
+      m.id === msgId ? { ...m, reaction: emoji } : m
+    ));
+
+    currentChannel.send({
+      type: 'broadcast',
+      event: 'message_reaction',
+      payload: { messageId: msgId, reaction: emoji }
+    });
   };
 
   const saveChat = () => {
@@ -1619,29 +1649,76 @@ export default function App() {
                         mass: 0.8
                       }}
                       className={cn(
-                        "flex flex-col w-full",
+                        "flex flex-col w-full group relative mb-2",
                         msg.senderId === tabId ? "items-end" : "items-start"
                       )}
                     >
                       <motion.div 
-                        whileHover={{ scale: 1.02 }}
+                        drag="x"
+                        dragConstraints={{ left: 0, right: 0 }}
+                        dragElastic={{ right: msg.senderId === tabId ? 0 : 0.2, left: msg.senderId === tabId ? 0.2 : 0 }}
+                        onDragEnd={(e, { offset }) => {
+                          if (Math.abs(offset.x) > 50) {
+                            setReplyToMsg(msg);
+                          }
+                        }}
+                        onDoubleClick={() => handleMessageReact(msg.id, '❤️')}
                         className={cn(
-                          "max-w-[85%] sm:max-w-[70%] px-4 sm:px-5 py-2.5 sm:py-3 rounded-[1.4rem] shadow-xl backdrop-blur-md text-sm font-bold tracking-tight",
+                          "max-w-[85%] sm:max-w-[70%] px-4 sm:px-5 py-2.5 sm:py-3 rounded-[1.4rem] shadow-xl backdrop-blur-md text-sm font-bold tracking-tight relative",
                           msg.senderId === tabId 
                             ? "bg-gradient-to-br from-blue-600 to-blue-500 text-white rounded-tr-sm shadow-blue-500/10" 
                             : "bg-[#111111]/95 text-white rounded-tl-sm border border-white/5 shadow-black/50"
                         )}
                       >
+                        {/* Reply content block inside bubble */}
+                        {msg.replyTo && (
+                          <div className={cn(
+                             "mb-2 px-3 py-2 rounded-lg border-l-[3px] text-xs flex flex-col opacity-90 backdrop-blur-md shadow-inner",
+                             msg.senderId === tabId ? "bg-black/20 border-white/60 text-white" : "bg-white/5 border-blue-400 text-[#d1d5db]"
+                          )}>
+                            <span className={cn("font-black uppercase tracking-wider mb-0.5 text-[9px]", msg.senderId === tabId ? "text-white/80" : "text-blue-400")}>
+                              {msg.replyTo.senderId === tabId ? 'You' : 'Stranger'}
+                            </span>
+                            <span className="truncate">{msg.replyTo.content}</span>
+                          </div>
+                        )}
+                        
                         {msg.content}
+
+                        {/* Reaction badge */}
+                        {msg.reaction && (
+                          <motion.div 
+                            initial={{ scale: 0 }}
+                            animate={{ scale: 1 }}
+                            className={cn(
+                              "absolute -bottom-2 text-base px-1.5 py-0.5 rounded-full bg-[#111] border border-[#222] shadow-lg flex items-center justify-center pointer-events-none",
+                              msg.senderId === tabId ? "-left-1" : "-right-1"
+                            )}
+                          >
+                            {msg.reaction}
+                          </motion.div>
+                        )}
                       </motion.div>
-                      {msg.createdAt && (
-                        <span className={cn(
-                          "text-[9px] font-bold text-[#444] mt-1 px-2 uppercase tracking-wider",
-                          msg.senderId === tabId ? "text-right" : "text-left"
-                        )}>
-                          {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                        </span>
-                      )}
+                      
+                      <div className={cn(
+                        "flex items-center gap-2 mt-1 px-2",
+                        msg.senderId === tabId ? "flex-row-reverse" : "flex-row"
+                      )}>
+                        {msg.createdAt && (
+                          <span className={cn(
+                            "text-[9px] font-bold text-[#444] uppercase tracking-wider"
+                          )}>
+                            {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        )}
+                        <button 
+                          onClick={() => setReplyToMsg(msg)}
+                          className="text-[#444] hover:text-[#9ca3af] opacity-0 group-hover:opacity-100 transition-opacity"
+                          title="Reply"
+                        >
+                          <Reply size={12} />
+                        </button>
+                      </div>
                     </motion.div>
                   ))}
                   
@@ -1662,7 +1739,27 @@ export default function App() {
 
               {/* Fixed bottom input bar */}
                 <div className="px-4 sm:px-6 w-full max-w-4xl mx-auto pointer-events-auto z-50">
-                  <div className="flex items-center gap-2 sm:gap-3 bg-[#000000]/90 backdrop-blur-3xl p-2 rounded-2xl border border-[#1f1f1f] shadow-2xl" onPointerDown={e => e.stopPropagation()}>
+                  <AnimatePresence>
+                    {replyToMsg && (
+                      <motion.div 
+                        initial={{ opacity: 0, y: 10, height: 0 }}
+                        animate={{ opacity: 1, y: 0, height: 'auto' }}
+                        exit={{ opacity: 0, y: 10, height: 0 }}
+                        className="w-full flex"
+                      >
+                        <div className="flex items-center justify-between w-full bg-[#0a0a0a]/95 backdrop-blur-3xl rounded-t-2xl sm:rounded-t-3xl border-x border-t border-[#1f1f1f] border-l-[4px] border-l-blue-500/80 px-4 py-3 pb-5 text-sm shadow-xl relative top-3 z-[-1] shadow-blue-500/5">
+                          <div className="flex flex-col truncate pl-1">
+                            <span className="text-blue-400 font-black tracking-widest uppercase text-[10px] mb-0.5">{replyToMsg.senderId === tabId ? 'You' : 'Stranger'}</span>
+                            <span className="text-[#9ca3af] truncate max-w-[250px] sm:max-w-[400px] text-xs font-bold">{replyToMsg.content}</span>
+                          </div>
+                          <button onClick={() => setReplyToMsg(null)} className="p-1.5 text-[#9ca3af] hover:text-white rounded-full hover:bg-white/10 active:bg-white/5 transition-all shrink-0">
+                            <X size={16} />
+                          </button>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                  <div className="flex items-center gap-2 sm:gap-3 bg-[#000000]/90 backdrop-blur-3xl p-2 rounded-2xl border border-[#1f1f1f] shadow-2xl relative z-10" onPointerDown={e => e.stopPropagation()}>
                     <button 
                       onClick={() => {
                         handleStop();
