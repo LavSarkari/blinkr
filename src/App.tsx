@@ -403,7 +403,7 @@ export default function App() {
           .select('*')
           .eq('chat_mode', chatMode)
           .neq('socket_id', tabId)
-          .filter('interests', interests.length > 0 ? 'cs' : 'is', interests.length > 0 ? `{${interests.join(',')}}` : 'null')
+          .filter('interests', interests.length > 0 ? 'cs' : 'eq', interests.length > 0 ? `{${interests.join(',')}}` : '{}')
           .order('created_at', { ascending: true })
           .limit(1)
           .maybeSingle();
