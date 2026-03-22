@@ -90,7 +90,7 @@ export default defineConfig({
         manualChunks: {
           'vendor-react': ['react', 'react-dom'],
           'vendor-motion': ['motion'],
-          'vendor-socket': ['socket.io-client'],
+          'vendor-supabase': ['@supabase/supabase-js'],
         },
       },
     },

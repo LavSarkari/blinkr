@@ -25,9 +25,13 @@ import {
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import socket from './services/socket';
+import { supabase } from './services/supabase';
 import { getSession } from './services/session';
+import { nanoid } from 'nanoid';
 import Peer from 'simple-peer';
+
+// Unique ID for this specific tab/session connection
+const tabId = nanoid();
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -65,7 +69,7 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [swipeDirection, setSwipeDirection] = useState(0);
   const [activePage, setActivePage] = useState<'security' | 'privacy' | 'terms' | null>(null);
-  const [isConnected, setIsConnected] = useState(socket.connected);
+  const [isConnected, setIsConnected] = useState(true); // Supabase is usually "connected" via HTTPS
   const [settings, setSettings] = useState({
     soundEnabled: true,
     enterToSend: true,
@@ -98,117 +102,137 @@ export default function App() {
     messageSoundRef.current = new Audio('https://assets.mixkit.co/active_storage/sfx/2354/2354-preview.mp3');
 
     // Connection status tracking
-    const onConnect = () => {
-      console.log('✅ Socket connected:', socket.id);
-      setIsConnected(true);
-    };
-    const onDisconnect = () => {
-      console.log('❌ Socket disconnected');
-      setIsConnected(false);
-    };
-    const onConnectError = (err: any) => {
-      console.error('⚠️ Socket connection error:', err);
-      setIsConnected(false);
-    };
+    setIsConnected(true);
 
-    // Explicitly sync initial state
-    setIsConnected(socket.connected);
-
-    socket.on("connect", onConnect);
-    socket.on("disconnect", onDisconnect);
-    socket.on("connect_error", onConnectError);
-
-    socket.on("online_count", (count: number) => {
-      setOnlineCount(count);
+    // Main Supabase Realtime Channel for global events (like online count)
+    const lobby = supabase.channel('lobby', {
+      config: {
+        presence: {
+          key: tabId,
+        },
+      },
     });
 
-    socket.on("match_found", (data: { roomId: string; users: any[]; commonInterests?: string[]; question?: string }) => {
-      const partner = data.users.find(u => u.id !== socket.id);
-      setCurrentMatch({ 
-        roomId: data.roomId, 
-        partner: partner.session,
-        commonInterests: data.commonInterests 
+    lobby
+      .on('presence', { event: 'sync' }, () => {
+        const state = lobby.presenceState();
+        setOnlineCount(Object.keys(state).length);
+      })
+      .subscribe(async (status) => {
+        if (status === 'SUBSCRIBED') {
+          await lobby.track({ online_at: new Date().toISOString(), user_id: session.id });
+        }
       });
-      setIsSearching(false);
-      setIsDisconnected(false);
-      setMatchMessages([]);
-      setStopState('stop');
-      
-      if (data.question) {
-        setIsQuestionMatch(true);
-        setCurrentQuestion(data.question);
-      } else {
-        setIsQuestionMatch(false);
-        setCurrentQuestion(null);
-      }
-      
-      if (settings.soundEnabled) {
-        matchSoundRef.current?.play().catch(() => {});
-      }
 
-      // If video mode, initiate WebRTC
-      if (chatMode === 'video') {
-        const isInitiator = data.users[0].id === socket.id;
-        initiatePeer(data.roomId, isInitiator);
-      }
-    });
+    // Personal channel for receiving matches
+    const personalChannel = supabase.channel(`user_${tabId}`);
 
-    socket.on("webrtc_signal", (data: { signal: any }) => {
-      if (peerRef.current) {
-        peerRef.current.signal(data.signal);
-      }
-    });
-
-    socket.on("match_msg", (msg: any) => {
-      setMatchMessages(prev => [...prev, msg]);
-      if (settings.soundEnabled && msg.senderId !== session.id) {
-        messageSoundRef.current?.play().catch(() => {});
-      }
-    });
-
-    socket.on("partner_left", () => {
-      setCurrentMatch(null);
-      setMatchMessages([]);
-      setIsPartnerTyping(false);
-      setIsDisconnected(true);
-      setStopState('new');
-      destroyPeer();
-    });
-
-    socket.on("partner_typing", (data: { isTyping: boolean }) => {
-      setIsPartnerTyping(data.isTyping);
-    });
-
-    socket.on("receive_reaction", (data: { type: string; x: number; y: number }) => {
-      if (data.type === 'heart') {
-        const newHearts = Array.from({ length: 8 }).map((_, i) => ({
-          id: Date.now() + i + Math.random(),
-          x: data.x + (Math.random() - 0.5) * 40,
-          y: data.y + (Math.random() - 0.5) * 40,
-        }));
-        setHearts(prev => [...prev, ...newHearts]);
-        setTimeout(() => {
-          setHearts(prev => prev.filter(h => !newHearts.find(nh => nh.id === h.id)));
-        }, 1500);
-      }
-    });
+    personalChannel
+      .on('broadcast', { event: 'match_found' }, (payload) => {
+        handleMatchFound(payload.payload);
+      })
+      .subscribe();
 
     return () => {
-      socket.off("connect", onConnect);
-      socket.off("disconnect", onDisconnect);
-      socket.off("connect_error", onConnectError);
-      socket.off("online_count");
-      socket.off("match_found");
-      socket.off("match_msg");
-      socket.off("partner_left");
-      socket.off("partner_typing");
-      socket.off("receive_reaction");
-      socket.off("webrtc_signal");
-      destroyPeer();
+      lobby.unsubscribe();
+      personalChannel.unsubscribe();
+      if (peerRef.current) destroyPeer();
+      // Clean up waiting room if we leave
+      supabase.from('waiting_room').delete().eq('socket_id', tabId);
     };
   }, [chatMode, settings.soundEnabled]);
 
-  const initiatePeer = async (roomId: string, initiator: boolean) => {
+  const [currentChannel, setCurrentChannel] = useState<any>(null);
+
+  const handleMatchFound = (data: { roomId: string; users: any[]; commonInterests?: string[]; question?: string }) => {
+    const partner = data.users.find(u => u.id !== tabId);
+    if (!partner) return;
+
+    setCurrentMatch({ 
+      roomId: data.roomId, 
+      partner: partner.session,
+      commonInterests: data.commonInterests 
+    });
+    setIsSearching(false);
+    setIsDisconnected(false);
+    setMatchMessages([]);
+    setStopState('stop');
+    
+    if (data.question) {
+      setIsQuestionMatch(true);
+      setCurrentQuestion(data.question);
+    } else {
+      setIsQuestionMatch(false);
+      setCurrentQuestion(null);
+    }
+    
+    if (settings.soundEnabled) {
+      matchSoundRef.current?.play().catch(() => {});
+    }
+
+    // Join the match's private channel
+    const channel = supabase.channel(`room_${data.roomId}`);
+    
+    channel
+      .on('broadcast', { event: 'message' }, (payload) => {
+        setMatchMessages(prev => [...prev, payload.payload]);
+        if (settings.soundEnabled && payload.payload.senderId !== tabId) {
+          messageSoundRef.current?.play().catch(() => {});
+        }
+      })
+      .on('broadcast', { event: 'typing' }, (payload) => {
+        setIsPartnerTyping(payload.payload.isTyping);
+      })
+      .on('broadcast', { event: 'reaction' }, (payload) => {
+        if (payload.payload.type === 'heart') {
+          handleReceiveHeart(payload.payload);
+        }
+      })
+      .on('broadcast', { event: 'webrtc_signal' }, (payload) => {
+        if (peerRef.current) {
+          peerRef.current.signal(payload.payload.signal);
+        }
+      })
+      .on('broadcast', { event: 'partner_left' }, () => {
+        handlePartnerLeft();
+      })
+      .subscribe();
+
+    setCurrentChannel(channel);
+
+    // If video mode, initiate WebRTC
+    if (chatMode === 'video') {
+      const isInitiator = data.users[0].id === tabId;
+      initiatePeer(data.roomId, isInitiator, channel);
+    }
+  };
+
+  const handleReceiveHeart = (data: { x: number; y: number }) => {
+    const newHearts = Array.from({ length: 8 }).map((_, i) => ({
+      id: Date.now() + i + Math.random(),
+      x: data.x + (Math.random() - 0.5) * 40,
+      y: data.y + (Math.random() - 0.5) * 40,
+    }));
+    setHearts(prev => [...prev, ...newHearts]);
+    setTimeout(() => {
+      setHearts(prev => prev.filter(h => !newHearts.find(nh => nh.id === h.id)));
+    }, 1500);
+  };
+
+  const handlePartnerLeft = () => {
+    setCurrentMatch(null);
+    setMatchMessages([]);
+    setIsPartnerTyping(false);
+    setIsDisconnected(true);
+    setStopState('new');
+    destroyPeer();
+    if (currentChannel) {
+      currentChannel.unsubscribe();
+      setCurrentChannel(null);
+    }
+  };
+
+  const initiatePeer = async (roomId: string, initiator: boolean, channel: any) => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
       setLocalStream(stream);
@@ -222,15 +246,17 @@ export default function App() {
             { urls: 'stun:stun.l.google.com:19302' },
             { urls: 'stun:stun1.l.google.com:19302' },
             { urls: 'stun:stun2.l.google.com:19302' },
-            { urls: 'stun:stun3.l.google.com:19302' },
-            { urls: 'stun:stun4.l.google.com:19302' },
           ]
         },
         stream,
       });
 
       peer.on('signal', (signal) => {
-        socket.emit('webrtc_signal', { roomId, signal });
+        channel.send({
+          type: 'broadcast',
+          event: 'webrtc_signal',
+          payload: { signal }
+        });
       });
 
       peer.on('stream', (remoteStream) => {
@@ -239,7 +265,7 @@ export default function App() {
       });
 
       peer.on('error', (err) => console.error('Peer error:', err));
-      peer.on('close', () => destroyPeer());
+      peer.on('close', () => handlePartnerLeft());
 
       peerRef.current = peer;
     } catch (err) {
@@ -266,31 +292,84 @@ export default function App() {
     }
   }, [matchMessages, isPartnerTyping]);
 
-  const startRandomSearch = (spyQuestion?: string) => {
+  const startRandomSearch = async (spyQuestion?: string) => {
     setIsSearching(true);
     setIsDisconnected(false);
     setIsQuestionMatch(!!spyQuestion);
     setCurrentQuestion(spyQuestion || null);
-    socket.emit("find_match", { 
-      session, 
-      interests, 
-      chatMode,
-      question: spyQuestion 
-    });
     setStopState('stop');
+
+    try {
+      // 1. Check for an existing waiting user (Atomic-ish Match)
+      const { data: potentialMatches, error: searchError } = await supabase
+        .from('waiting_room')
+        .select('*')
+        .eq('chat_mode', chatMode)
+        .neq('socket_id', tabId)
+        .order('created_at', { ascending: true })
+        .limit(1);
+
+      if (!searchError && potentialMatches && potentialMatches.length > 0) {
+        const partner = potentialMatches[0];
+        // Attempt to claim this partner by deleting them
+        const { error: claimError, count } = await supabase
+          .from('waiting_room')
+          .delete({ count: 'exact' })
+          .eq('socket_id', partner.socket_id);
+
+        if (!claimError && count && count > 0) {
+          // Match successful!
+          const roomId = nanoid();
+          const matchData = {
+            roomId,
+            users: [
+              { id: tabId, session },
+              { id: partner.socket_id, session: { id: partner.socket_id, name: 'Stranger' } } // Simplified for partner
+            ],
+            question: spyQuestion || partner.question
+          };
+
+          // Notify partner
+          await supabase.channel(`user_${partner.socket_id}`).send({
+            type: 'broadcast',
+            event: 'match_found',
+            payload: matchData
+          });
+
+          // Join and handle locally
+          handleMatchFound(matchData);
+          return;
+        }
+      }
+
+      // 2. If no match found, put self in waiting room
+      await supabase.from('waiting_room').upsert({
+        socket_id: tabId,
+        interests,
+        chat_mode: chatMode,
+        question: spyQuestion,
+        created_at: new Date().toISOString()
+      });
+
+    } catch (err) {
+      console.error('Search error:', err);
+      setIsSearching(false);
+    }
   };
 
-  const cancelSearch = () => {
+  const cancelSearch = async () => {
     setIsSearching(false);
-    socket.emit("cancel_search");
+    await supabase.from('waiting_room').delete().eq('socket_id', tabId);
   };
 
-  const leaveMatch = () => {
-    if (currentMatch) {
-      socket.emit("leave_match", currentMatch.roomId);
-      setCurrentMatch(null);
-      setMatchMessages([]);
-      destroyPeer();
+  const leaveMatch = async () => {
+    if (currentMatch && currentChannel) {
+      await currentChannel.send({
+        type: 'broadcast',
+        event: 'partner_left',
+        payload: {}
+      });
+      handlePartnerLeft();
     }
   };
 
@@ -319,20 +398,29 @@ export default function App() {
     setInterests(interests.filter(i => i !== interest));
   };
 
-  const sendMessage = (e: React.FormEvent) => {
+  const sendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!currentMatch || !inputText.trim()) return;
+    if (!currentMatch || !inputText.trim() || !currentChannel) return;
     
-    socket.emit("send_match_msg", {
-      roomId: currentMatch.roomId,
+    const msg = {
+      id: nanoid(),
       content: inputText.trim(),
-      senderId: session.id
+      senderId: tabId,
+      createdAt: Date.now()
+    };
+
+    await currentChannel.send({
+      type: 'broadcast',
+      event: 'message',
+      payload: msg
     });
+
+    setMatchMessages(prev => [...prev, msg]);
     setInputText("");
     
     // Stop typing indicator immediately on send
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-    socket.emit("typing", { roomId: currentMatch.roomId, isTyping: false });
+    currentChannel.send({ type: 'broadcast', event: 'typing', payload: { isTyping: false } });
     lastTypingEmitRef.current = 0;
   };
 
@@ -340,12 +428,12 @@ export default function App() {
     const value = e.target.value;
     setInputText(value);
 
-    if (!currentMatch) return;
+    if (!currentMatch || !currentChannel) return;
 
     // Throttle emits to every 2 seconds
     const now = Date.now();
     if (now - lastTypingEmitRef.current > 2000) {
-      socket.emit("typing", { roomId: currentMatch.roomId, isTyping: true });
+      currentChannel.send({ type: 'broadcast', event: 'typing', payload: { isTyping: true } });
       lastTypingEmitRef.current = now;
     }
 
@@ -354,7 +442,7 @@ export default function App() {
 
     // Set new timeout to hide typing indicator after 3 seconds of inactivity
     typingTimeoutRef.current = setTimeout(() => {
-      socket.emit("typing", { roomId: currentMatch.roomId, isTyping: false });
+      currentChannel.send({ type: 'broadcast', event: 'typing', payload: { isTyping: false } });
       lastTypingEmitRef.current = 0;
     }, 3000);
   };
@@ -362,7 +450,7 @@ export default function App() {
   const saveChat = () => {
     if (matchMessages.length === 0) return;
     const chatText = matchMessages.map(m => 
-      `${m.senderId === session.id ? 'You' : 'Stranger'}: ${m.content}`
+      `${m.senderId === tabId ? 'You' : 'Stranger'}: ${m.content}`
     ).join('\n');
     const blob = new Blob([chatText], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
@@ -373,9 +461,14 @@ export default function App() {
     URL.revokeObjectURL(url);
   };
 
-  const handleReport = () => {
+  const handleReport = async () => {
     if (currentMatch) {
-      socket.emit("report_user", { roomId: currentMatch.roomId });
+      await supabase.from('reports').insert({
+        reporter_id: tabId,
+        reported_id: currentMatch.partner.id || 'unknown',
+        room_id: currentMatch.roomId,
+        reason: 'Reported by user'
+      });
     }
     showNotification("Stranger has been reported. Thank you for keeping Stranger.io safe.", 'success');
     handleStop();
@@ -441,12 +534,11 @@ export default function App() {
     setHearts(prev => [...prev, ...newHearts]);
     
     // Emit reaction to partner
-    if (currentMatch) {
-      socket.emit("send_reaction", { 
-        roomId: currentMatch.roomId, 
-        type: 'heart', 
-        x, 
-        y 
+    if (currentMatch && currentChannel) {
+      currentChannel.send({
+        type: 'broadcast',
+        event: 'reaction',
+        payload: { type: 'heart', x, y }
       });
     }
 
@@ -1341,14 +1433,14 @@ export default function App() {
                       }}
                       className={cn(
                         "flex flex-col w-full",
-                        msg.senderId === session.id ? "items-end" : "items-start"
+                        msg.senderId === socket.id ? "items-end" : "items-start"
                       )}
                     >
                       <motion.div 
                         whileHover={{ scale: 1.02 }}
                         className={cn(
                           "max-w-[85%] sm:max-w-[70%] px-4 sm:px-5 py-2.5 sm:py-3 rounded-[1.4rem] shadow-xl backdrop-blur-md text-sm font-bold tracking-tight",
-                          msg.senderId === session.id 
+                          msg.senderId === socket.id 
                             ? "bg-gradient-to-br from-blue-600 to-blue-500 text-white rounded-tr-sm shadow-blue-500/10" 
                             : "bg-[#111111]/95 text-white rounded-tl-sm border border-white/5 shadow-black/50"
                         )}
@@ -1358,7 +1450,7 @@ export default function App() {
                       {msg.createdAt && (
                         <span className={cn(
                           "text-[9px] font-bold text-[#444] mt-1 px-2 uppercase tracking-wider",
-                          msg.senderId === session.id ? "text-right" : "text-left"
+                          msg.senderId === socket.id ? "text-right" : "text-left"
                         )}>
                           {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         </span>
