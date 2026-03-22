@@ -32,15 +32,7 @@ import { nanoid } from 'nanoid';
 import Peer from 'simple-peer';
 
 // Unique ID for this specific tab/session connection
-const getTabId = () => {
-  let id = sessionStorage.getItem('blinkr_tab_id');
-  if (!id) {
-    id = nanoid();
-    sessionStorage.setItem('blinkr_tab_id', id);
-  }
-  return id;
-};
-const tabId = getTabId();
+const tabId = nanoid();
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
