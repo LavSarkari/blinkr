@@ -32,7 +32,15 @@ import { nanoid } from 'nanoid';
 import Peer from 'simple-peer';
 
 // Unique ID for this specific tab/session connection
-const tabId = nanoid();
+const getTabId = () => {
+  let id = sessionStorage.getItem('blinkr_tab_id');
+  if (!id) {
+    id = nanoid();
+    sessionStorage.setItem('blinkr_tab_id', id);
+  }
+  return id;
+};
+const tabId = getTabId();
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -101,6 +109,16 @@ export default function App() {
   };
 
   useEffect(() => {
+    // Clear our own stale state on reload
+    supabase.from('waiting_room').delete().eq('socket_id', tabId).then();
+
+    // Clean up when the user closes the tab
+    const handleBeforeUnload = () => {
+      // Use navigator.sendBeacon if possible, otherwise standard delete (best effort)
+      supabase.from('waiting_room').delete().eq('socket_id', tabId).then();
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
     // Initialize sounds
     matchSoundRef.current = new Audio('https://assets.mixkit.co/active_storage/sfx/2358/2358-preview.mp3');
     messageSoundRef.current = new Audio('https://assets.mixkit.co/active_storage/sfx/2354/2354-preview.mp3');
@@ -138,11 +156,12 @@ export default function App() {
       .subscribe();
 
     return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
       lobby.unsubscribe();
       personalChannel.unsubscribe();
       if (peerRef.current) destroyPeer();
       // Clean up waiting room if we leave
-      supabase.from('waiting_room').delete().eq('socket_id', tabId);
+      supabase.from('waiting_room').delete().eq('socket_id', tabId).then();
     };
   }, [chatMode, settings.soundEnabled]);
 
@@ -359,21 +378,27 @@ export default function App() {
     }
   }, []);
 
-  const startRandomSearch = async () => {
+  const startRandomSearch = async (specificInviteId?: string) => {
     setIsSearching(true);
     setIsDisconnected(false);
     setStopState('stop');
+
+    const targetInviteId = specificInviteId || inviteId;
+
+    // 🧹 Garbage Collection: Delete orphaned rows older than 3 minutes to prevent stale matches
+    const threeMinsAgo = new Date(Date.now() - 3 * 60000).toISOString();
+    supabase.from('waiting_room').delete().lt('created_at', threeMinsAgo).then();
 
     try {
       let matchedUser = null;
       let findError = null;
 
-      if (inviteId) {
+      if (targetInviteId) {
         // Search for a specific invite room
         const { data, error } = await supabase
           .from('waiting_room')
           .select('*')
-          .eq('room_id', inviteId)
+          .eq('room_id', targetInviteId)
           .neq('socket_id', tabId)
           .limit(1)
           .maybeSingle();
@@ -430,10 +455,10 @@ export default function App() {
       }
 
       // If no match found (or claim failed), put self in waiting room
-      const currentRoomId = inviteId || nanoid();
+      const currentRoomId = targetInviteId || nanoid();
       await supabase.from('waiting_room').upsert({
         socket_id: tabId,
-        interests: inviteId ? [] : interests, // Interests only for random search
+        interests: targetInviteId ? [] : interests, // Interests only for random search
         chat_mode: chatMode,
         room_id: currentRoomId,
         created_at: new Date().toISOString()
@@ -445,8 +470,12 @@ export default function App() {
       setIsSearching(false);
     }
     // If search ends without a match, and it was an invite search, clear inviteId
-    if (!currentMatch && inviteId) {
-      setInviteId(null);
+    if (!currentMatch && targetInviteId) {
+      // We don't clear the inviteId if we are the host waiting for someone to join our created link
+      const params = new URLSearchParams(window.location.search);
+      if (!params.get('invite')) {
+        setInviteId(null);
+      }
     }
   };
 
@@ -456,7 +485,7 @@ export default function App() {
     const link = `${window.location.origin}?invite=${id}`;
     navigator.clipboard.writeText(link);
     showNotification("Invite link copied! Share it with a friend.", "success");
-    startRandomSearch();
+    startRandomSearch(id);
   };
 
   const cancelSearch = async () => {
