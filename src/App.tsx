@@ -432,11 +432,17 @@ export default function App() {
             question: question || matchedUser.question
           };
 
-          // Notify partner
-          await supabase.channel(`user_${matchedUser.socket_id}`).send({
-            type: 'broadcast',
-            event: 'match_found',
-            payload: matchData
+          // Notify partner: We must subscribe to the channel before we can broadcast to it
+          const partnerChannel = supabase.channel(`user_${matchedUser.socket_id}`);
+          partnerChannel.subscribe(async (status) => {
+            if (status === 'SUBSCRIBED') {
+              await partnerChannel.send({
+                type: 'broadcast',
+                event: 'match_found',
+                payload: matchData
+              });
+              setTimeout(() => partnerChannel.unsubscribe(), 1000);
+            }
           });
 
           // Join and handle locally
