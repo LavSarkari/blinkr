@@ -413,13 +413,13 @@ export default function App() {
 
       if (!findError && matchedUser) {
         // Attempt to claim this partner by deleting them
-        const { error: claimError, count } = await supabase
+        const { data: claimedRows, error: claimError } = await supabase
           .from('waiting_room')
           .delete()
           .eq('socket_id', matchedUser.socket_id)
           .select();
 
-        if (!claimError && count && count > 0) {
+        if (!claimError && claimedRows && claimedRows.length > 0) {
           // Match successful!
           const roomId = matchedUser.room_id;
           const matchData = {
