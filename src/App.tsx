@@ -385,9 +385,9 @@ export default function App() {
 
     const targetInviteId = specificInviteId || inviteId;
 
-    // 🧹 Garbage Collection: Delete orphaned rows older than 3 minutes to prevent stale matches
-    const threeMinsAgo = new Date(Date.now() - 3 * 60000).toISOString();
-    supabase.from('waiting_room').delete().lt('created_at', threeMinsAgo).then();
+    // 🧹 Garbage Collection: Delete orphaned rows older than 15 minutes to prevent stale matches
+    const fifteenMinsAgo = new Date(Date.now() - 15 * 60000).toISOString();
+    supabase.from('waiting_room').delete().lt('created_at', fifteenMinsAgo).then();
 
     try {
       let matchedUser = null;
