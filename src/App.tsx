@@ -86,6 +86,8 @@ export default function App() {
   const [isCameraOn, setIsCameraOn] = useState(true);
   const [inviteId, setInviteId] = useState<string | null>(null);
   const [hearts, setHearts] = useState<{ id: number; x: number; y: number }[]>([]);
+  // Video call state: idle | requesting | incoming | active
+  const [videoCallState, setVideoCallState] = useState<'idle' | 'requesting' | 'incoming' | 'active'>('idle');
   const peerRef = useRef<Peer.Instance | null>(null);
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
@@ -215,6 +217,32 @@ export default function App() {
         setMatchMessages(prev => prev.map(m => 
           m.id === payload.payload.messageId ? { ...m, reaction: payload.payload.reaction } : m
         ));
+      })
+      .on('broadcast', { event: 'video_request' }, () => {
+        setVideoCallState('incoming');
+      })
+      .on('broadcast', { event: 'video_accept' }, async () => {
+        // Partner accepted, start WebRTC as initiator
+        setVideoCallState('active');
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+          setLocalStream(stream);
+          localStreamRef.current = stream;
+          if (localVideoRef.current) localVideoRef.current.srcObject = stream;
+          initiatePeer(data.roomId, true, channel, stream);
+        } catch {
+          showNotification('Camera access failed.', 'error');
+          setVideoCallState('idle');
+        }
+      })
+      .on('broadcast', { event: 'video_decline' }, () => {
+        setVideoCallState('idle');
+        showNotification('Stranger declined the video call.', 'info');
+      })
+      .on('broadcast', { event: 'video_end' }, () => {
+        setVideoCallState('idle');
+        destroyPeer();
+        showNotification('Video call ended.', 'info');
       })
       .on('broadcast', { event: 'reaction' }, (payload) => {
         if (payload.payload.type === 'heart') {
@@ -1527,6 +1555,122 @@ export default function App() {
               }}
             >
 
+              {/* ===== INCOMING VIDEO CALL BANNER ===== */}
+              <AnimatePresence>
+                {videoCallState === 'incoming' && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -100 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -100 }}
+                    className="absolute inset-x-0 top-[60px] z-[90] flex justify-center px-4 pt-4"
+                  >
+                    <div className="w-full max-w-sm bg-[#111]/95 backdrop-blur-2xl border border-white/10 rounded-3xl p-5 shadow-[0_20px_60px_-10px_rgba(0,0,0,0.8)] flex flex-col items-center gap-5">
+                      <motion.div
+                        animate={{ scale: [1, 1.08, 1] }}
+                        transition={{ duration: 1.5, repeat: Infinity }}
+                        className="w-16 h-16 rounded-full bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center text-white text-2xl font-black shadow-[0_0_30px_rgba(59,130,246,0.4)]"
+                      >S</motion.div>
+                      <div className="text-center">
+                        <p className="text-white font-black text-base">Stranger is calling...</p>
+                        <p className="text-[#9ca3af] text-xs font-bold mt-1 uppercase tracking-widest">Video Call</p>
+                      </div>
+                      <div className="flex items-center gap-4 w-full">
+                        <button
+                          onClick={async () => {
+                            setVideoCallState('active');
+                            currentChannel.send({ type: 'broadcast', event: 'video_accept', payload: {} });
+                            try {
+                              const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+                              setLocalStream(stream);
+                              localStreamRef.current = stream;
+                              if (localVideoRef.current) localVideoRef.current.srcObject = stream;
+                              initiatePeer(currentMatch!.roomId, false, currentChannel, stream);
+                            } catch {
+                              showNotification('Camera access failed.', 'error');
+                              setVideoCallState('idle');
+                            }
+                          }}
+                          className="flex-1 h-12 bg-emerald-500 hover:bg-emerald-400 text-white rounded-2xl font-black text-sm uppercase tracking-wider transition-all active:scale-95 shadow-[0_0_20px_rgba(16,185,129,0.3)]"
+                        >Accept</button>
+                        <button
+                          onClick={() => {
+                            setVideoCallState('idle');
+                            currentChannel.send({ type: 'broadcast', event: 'video_decline', payload: {} });
+                          }}
+                          className="flex-1 h-12 bg-red-500 hover:bg-red-400 text-white rounded-2xl font-black text-sm uppercase tracking-wider transition-all active:scale-95 shadow-[0_0_20px_rgba(239,68,68,0.3)]"
+                        >Decline</button>
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* ===== REQUESTING BADGE ===== */}
+              <AnimatePresence>
+                {videoCallState === 'requesting' && (
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.8 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.8 }}
+                    className="absolute top-[70px] inset-x-0 z-[90] flex justify-center px-4 pt-2"
+                  >
+                    <div className="flex items-center gap-3 bg-[#111]/95 backdrop-blur-2xl border border-yellow-500/20 rounded-2xl px-5 py-3 shadow-xl">
+                      <motion.div animate={{ scale: [1, 1.3, 1] }} transition={{ duration: 1, repeat: Infinity }} className="w-2 h-2 bg-yellow-400 rounded-full" />
+                      <span className="text-yellow-300 font-black text-xs uppercase tracking-widest">Calling Stranger...</span>
+                      <button onClick={() => {
+                        setVideoCallState('idle');
+                        currentChannel?.send({ type: 'broadcast', event: 'video_decline', payload: {} });
+                      }} className="text-white/40 hover:text-white ml-1"><X size={14}/></button>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* ===== ACTIVE VIDEO OVERLAY ===== */}
+              <AnimatePresence>
+                {videoCallState === 'active' && (
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="absolute inset-0 z-[30] bg-black"
+                  >
+                    {/* Remote video fullscreen */}
+                    <video ref={remoteVideoRef} autoPlay playsInline className="w-full h-full object-cover" />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent pointer-events-none" />
+                    {/* Local PiP */}
+                    <div className="absolute top-20 right-4 w-28 sm:w-36 aspect-[3/4] bg-[#0a0a0a] rounded-2xl overflow-hidden shadow-2xl border border-white/10 z-10">
+                      <video ref={localVideoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
+                    </div>
+                    {/* Controls bar */}
+                    <div className="absolute bottom-32 inset-x-0 flex items-center justify-center gap-4 z-10">
+                      <button onClick={toggleMic} className={cn("w-14 h-14 rounded-full flex items-center justify-center transition-all shadow-xl", isMuted ? "bg-red-500 text-white" : "bg-white/10 backdrop-blur-md text-white hover:bg-white/20")}>
+                        <VolumeX size={22} />
+                      </button>
+                      <button
+                        onClick={() => {
+                          currentChannel?.send({ type: 'broadcast', event: 'video_end', payload: {} });
+                          setVideoCallState('idle');
+                          destroyPeer();
+                        }}
+                        className="w-16 h-16 rounded-full bg-red-500 hover:bg-red-400 flex items-center justify-center text-white shadow-[0_0_20px_rgba(239,68,68,0.5)] transition-all active:scale-95"
+                      >
+                        <LogOut size={24} />
+                      </button>
+                      <button onClick={toggleCamera} className={cn("w-14 h-14 rounded-full flex items-center justify-center transition-all shadow-xl", !isCameraOn ? "bg-red-500 text-white" : "bg-white/10 backdrop-blur-md text-white hover:bg-white/20")}>
+                        <Video size={22} />
+                      </button>
+                    </div>
+                    {!remoteStream && (
+                      <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 z-20 bg-black/80">
+                        <div className="w-10 h-10 border-2 border-blue-500/20 border-t-blue-500 rounded-full animate-spin" />
+                        <span className="text-[11px] font-black text-[#9ca3af] uppercase tracking-widest">Connecting Video...</span>
+                      </div>
+                    )}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
               <div className="absolute inset-0 z-0 pointer-events-none">
                 {chatMode === 'video' ? (
                   <>
@@ -1588,36 +1732,50 @@ export default function App() {
                   <div className="flex items-center gap-1">
                     <button 
                       onClick={() => {
-                        if (chatMode !== 'video') {
-                          showNotification("Switch to Video Chat from the home screen to use the camera.", "error");
-                        } else {
-                          toggleCamera();
+                        if (!currentChannel) return;
+                        if (videoCallState === 'active') {
+                          // End the call
+                          currentChannel.send({ type: 'broadcast', event: 'video_end', payload: {} });
+                          setVideoCallState('idle');
+                          destroyPeer();
+                        } else if (videoCallState === 'idle') {
+                          // Request video call
+                          setVideoCallState('requesting');
+                          currentChannel.send({ type: 'broadcast', event: 'video_request', payload: {} });
                         }
                       }}
                       className={cn(
                         "p-2.5 rounded-full transition-colors",
-                        isCameraOn && chatMode === 'video' ? "text-blue-400 hover:bg-white/5" : "text-white/40 hover:text-white hover:bg-white/5"
+                        videoCallState === 'active' ? "text-red-400 hover:bg-red-500/10" :
+                        videoCallState === 'requesting' ? "text-yellow-400 animate-pulse" :
+                        "text-white/40 hover:text-white hover:bg-white/5"
                       )}
+                      title={videoCallState === 'active' ? 'End video call' : videoCallState === 'requesting' ? 'Waiting for response...' : 'Start video call'}
                     >
                       <Video size={20} />
                     </button>
                     <button 
                       onClick={() => {
-                        if (chatMode !== 'video') {
-                          showNotification("Switch to Video Chat from the home screen to use the microphone.", "error");
-                        } else {
+                        if (!currentChannel) return;
+                        if (videoCallState === 'active') {
+                          currentChannel.send({ type: 'broadcast', event: 'video_end', payload: {} });
+                          setVideoCallState('idle');
+                          destroyPeer();
+                        } else if (videoCallState === 'idle') {
                           toggleMic();
                         }
                       }}
                       className={cn(
                         "p-2.5 rounded-full transition-colors",
-                        !isMuted && chatMode === 'video' ? "text-blue-400 hover:bg-white/5" : "text-white/40 hover:text-white hover:bg-white/5"
+                        videoCallState === 'active' && isMuted ? "text-red-400 hover:bg-white/5" :
+                        videoCallState === 'active' ? "text-blue-400 hover:bg-white/5" :
+                        "text-white/40 hover:text-white hover:bg-white/5"
                       )}
                     >
                       <Volume2 size={20} />
                     </button>
                     <button 
-                      onClick={() => setIsSettingsOpen(true)}
+                      onClick={() => setShowSettings(true)}
                       className="p-2.5 text-white/40 hover:text-white hover:bg-white/5 rounded-full transition-colors ml-1"
                     >
                       <Settings size={20} />
