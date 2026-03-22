@@ -428,8 +428,7 @@ export default function App() {
               { id: tabId, session },
               { id: matchedUser.socket_id, session: { id: matchedUser.socket_id, name: 'Stranger' } }
             ],
-            commonInterests: matchedUser.interests,
-            question: question || matchedUser.question
+            commonInterests: matchedUser.interests
           };
 
           // Notify partner: We must subscribe to the channel before we can broadcast to it
