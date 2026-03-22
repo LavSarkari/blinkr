@@ -604,8 +604,8 @@ export default function App() {
     if (navigator.share) {
       try {
         await navigator.share({
-          title: 'Blinkr',
-          text: 'Talk to strangers anonymously on Blinkr!',
+          title: 'Blinkr | Free Omegle Alternative',
+          text: 'Talk to strangers anonymously on Blinkr | The premium random chat experience.',
           url: window.location.origin,
         });
       } catch (err) {
@@ -741,7 +741,11 @@ export default function App() {
               exit={{ y: -50, opacity: 0 }}
               transition={{ type: "spring", stiffness: 300, damping: 20 }}
               className="relative w-full max-w-[1100px] flex items-center justify-between gap-4 sm:gap-6 p-1.5 bg-[#050505]/60 backdrop-blur-3xl rounded-[2rem] border border-white/5 shadow-[0_10px_40px_-10px_rgba(59,130,246,0.15)] pointer-events-auto group"
+              role="banner"
             >
+          {/* SEO Hidden H1 */}
+          <h1 className="sr-only">Blinkr | Free Omegle Alternative | Random Video Chat with Strangers</h1>
+
           {/* Subtle Ambient Inner Glow that reacts to hover */}
           <div className="absolute inset-0 rounded-[2rem] bg-gradient-to-r from-blue-500/0 via-blue-500/5 to-purple-500/0 opacity-0 group-hover:opacity-100 transition-opacity duration-700 blur-md pointer-events-none" />
           
@@ -755,9 +759,9 @@ export default function App() {
             >
               <MessageSquare size={16} className="text-white fill-white relative z-10" />
             </motion.div>
-            <h1 className="text-lg font-black tracking-tighter text-white pr-2">
+            <div className="text-lg font-black tracking-tighter text-white pr-2">
               Blink<span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-blue-600">r</span>
-            </h1>
+            </div>
           </div>
           
 
@@ -769,7 +773,8 @@ export default function App() {
               whileTap={{ scale: 0.9 }}
               onClick={handleShare}
               className="w-10 h-10 flex items-center justify-center text-[#9ca3af] hover:text-white rounded-full transition-colors"
-              title="Share"
+              title="Share Blinkr"
+              aria-label="Share this app"
             >
               <Share2 size={16} />
             </motion.button>
@@ -1144,7 +1149,7 @@ export default function App() {
                   <div className="w-1 h-1 bg-[#1f1f1f] rounded-full" />
                   <span onClick={() => setActivePage('terms')} className="hover:text-white transition-colors cursor-pointer drop-shadow-md">Terms</span>
                 </div>
-                <p className="text-[9px] font-bold text-[#4a4a4a] uppercase tracking-[0.2em] drop-shadow-sm">© {new Date().getFullYear()} BLINKR. NO LOGS.</p>
+                <p className="text-[9px] font-bold text-[#4a4a4a] uppercase tracking-[0.2em] drop-shadow-sm">© {new Date().getFullYear()} BLINKR · NO LOGS.</p>
                 <a href="https://lavbytes.in" target="_blank" rel="noopener noreferrer" className="text-[9px] font-bold text-[#333] uppercase tracking-[0.2em] hover:text-blue-500 transition-colors">
                   Built by LavBytes
                 </a>

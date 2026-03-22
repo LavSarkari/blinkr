@@ -1,4 +1,4 @@
-# ⚡ Blinkr — The Premium Omegle Alternative
+# ⚡ Blinkr | The Premium Omegle Alternative
 
 **Connect. Chat. Repeat. Instantly.**
 
