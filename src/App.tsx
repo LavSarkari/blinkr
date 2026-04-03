@@ -978,7 +978,7 @@ export default function App() {
               
               <div className="flex flex-col gap-4">
                 <button 
-                  onClick={startRandomSearch}
+                  onClick={() => startRandomSearch()}
                   className="w-full min-h-[48px] bg-gradient-to-r from-blue-600 to-blue-500 text-white rounded-xl font-bold text-base transition-all active:scale-[0.97]"
                 >
                   New Chat
@@ -1138,7 +1138,7 @@ export default function App() {
                     <motion.button 
                       whileHover={{ scale: 1.02 }}
                       whileTap={{ scale: 0.98 }}
-                      onClick={startRandomSearch}
+                      onClick={() => startRandomSearch()}
                       className="w-full flex items-center justify-center min-h-[64px] bg-gradient-to-r from-blue-600 to-blue-500 text-white rounded-[1.5rem] text-xl font-black uppercase tracking-widest shadow-[0_20px_40px_-10px_rgba(59,130,246,0.3)] hover:shadow-[0_25px_50px_-12px_rgba(59,130,246,0.4)] transition-all relative overflow-hidden group/cta"
                     >
                       <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent -translate-x-full group-hover/cta:animate-[shimmer_2s_infinite]" />
