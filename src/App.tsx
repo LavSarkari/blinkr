@@ -792,7 +792,7 @@ export default function App() {
   };
 
   return (
-    <div className="flex flex-col h-screen w-full bg-[#000000] text-white font-sans selection:bg-blue-500/30 overflow-hidden relative">
+    <div className="flex flex-col h-[100dvh] w-full bg-[#000000] text-white font-sans selection:bg-blue-500/30 overflow-hidden relative">
       {/* Connection Status Banner */}
       <AnimatePresence>
         {!isConnected && (
@@ -1706,53 +1706,9 @@ export default function App() {
                 )}
               </AnimatePresence>
 
-              {/* ===== ACTIVE VIDEO OVERLAY ===== */}
-              <AnimatePresence>
-                {videoCallState === 'active' && (
-                  <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                    className="absolute inset-0 z-[30] bg-black"
-                  >
-                    {/* Remote video fullscreen */}
-                    <video ref={remoteVideoRef} autoPlay playsInline className="w-full h-full object-cover" />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent pointer-events-none" />
-                    {/* Local PiP */}
-                    <div className="absolute top-20 right-4 w-28 sm:w-36 aspect-[3/4] bg-[#0a0a0a] rounded-2xl overflow-hidden shadow-2xl border border-white/10 z-10">
-                      <video ref={localVideoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
-                    </div>
-                    {/* Controls bar */}
-                    <div className="absolute bottom-32 inset-x-0 flex items-center justify-center gap-4 z-10">
-                      <button onClick={toggleMic} className={cn("w-14 h-14 rounded-full flex items-center justify-center transition-all shadow-xl", isMuted ? "bg-red-500 text-white" : "bg-white/10 backdrop-blur-md text-white hover:bg-white/20")}>
-                        <VolumeX size={22} />
-                      </button>
-                      <button
-                        onClick={() => {
-                          currentChannel?.send({ type: 'broadcast', event: 'video_end', payload: {} });
-                          setVideoCallState('idle');
-                          destroyPeer();
-                        }}
-                        className="w-16 h-16 rounded-full bg-red-500 hover:bg-red-400 flex items-center justify-center text-white shadow-[0_0_20px_rgba(239,68,68,0.5)] transition-all active:scale-95"
-                      >
-                        <LogOut size={24} />
-                      </button>
-                      <button onClick={toggleCamera} className={cn("w-14 h-14 rounded-full flex items-center justify-center transition-all shadow-xl", !isCameraOn ? "bg-red-500 text-white" : "bg-white/10 backdrop-blur-md text-white hover:bg-white/20")}>
-                        <Video size={22} />
-                      </button>
-                    </div>
-                    {!remoteStream && (
-                      <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 z-20 bg-black/80">
-                        <div className="w-10 h-10 border-2 border-blue-500/20 border-t-blue-500 rounded-full animate-spin" />
-                        <span className="text-[11px] font-black text-[#9ca3af] uppercase tracking-widest">Connecting Video...</span>
-                      </div>
-                    )}
-                  </motion.div>
-                )}
-              </AnimatePresence>
-
-              <div className="absolute inset-0 z-0 pointer-events-none">
-                {chatMode === 'video' ? (
+              {/* ===== UNIFIED VIDEO LAYER ===== */}
+              <div className={cn("absolute inset-0 pointer-events-none", (chatMode === 'video' || videoCallState === 'active') ? "z-[30] bg-black" : "z-0")}>
+                {(chatMode === 'video' || videoCallState === 'active') ? (
                   <>
                     <video 
                       ref={remoteVideoRef} 
@@ -1760,12 +1716,14 @@ export default function App() {
                       playsInline 
                       className="w-full h-full object-cover"
                     />
-                    <div className="absolute inset-0 bg-gradient-to-t from-[#000000] via-[#000000]/60 to-[#000000]/20" />
+                    <div className="absolute inset-0 bg-gradient-to-t from-[#000000] via-[#000000]/60 to-[#000000]/20 pointer-events-none" />
+                    
                     <div className="absolute top-[env(safe-area-inset-top,1rem)] pt-4 left-4 z-10 px-3 py-1.5 bg-[#111111]/80 backdrop-blur-md rounded-lg text-[10px] font-black uppercase tracking-widest text-white border border-[#1f1f1f]">
                       Stranger
                     </div>
-                    {/* local video pip */}
-                    <div className="absolute top-[env(safe-area-inset-top,1rem)] pt-4 right-4 z-10 w-24 sm:w-32 aspect-[3/4] bg-[#0a0a0a] rounded-xl overflow-hidden shadow-2xl border border-white/10">
+
+                    {/* Local PiP */}
+                    <div className="absolute top-[env(safe-area-inset-top,1rem)] pt-4 right-4 z-10 w-24 sm:w-32 aspect-[3/4] bg-[#0a0a0a] rounded-xl overflow-hidden shadow-2xl border border-white/10 pointer-events-auto">
                       <video 
                         ref={localVideoRef} 
                         autoPlay 
@@ -1774,10 +1732,36 @@ export default function App() {
                         className="w-full h-full object-cover"
                       />
                     </div>
+
+                    {/* Controls Bar for Active Call */}
+                    {videoCallState === 'active' && (
+                      <div className="absolute bottom-32 inset-x-0 flex items-center justify-center gap-4 z-10 pointer-events-auto">
+                        <button onClick={toggleMic} className={cn("w-14 h-14 rounded-full flex items-center justify-center transition-all shadow-xl", isMuted ? "bg-red-500 text-white" : "bg-white/10 backdrop-blur-md text-white hover:bg-white/20")}>
+                          <VolumeX size={22} />
+                        </button>
+                        <button
+                          onClick={() => {
+                            currentChannel?.send({ type: 'broadcast', event: 'video_end', payload: {} });
+                            setVideoCallState('idle');
+                            destroyPeer();
+                          }}
+                          className="w-16 h-16 rounded-full bg-red-500 hover:bg-red-400 flex items-center justify-center text-white shadow-[0_0_20px_rgba(239,68,68,0.5)] transition-all active:scale-95"
+                        >
+                          <LogOut size={24} />
+                        </button>
+                        <button onClick={toggleCamera} className={cn("w-14 h-14 rounded-full flex items-center justify-center transition-all shadow-xl", !isCameraOn ? "bg-red-500 text-white" : "bg-white/10 backdrop-blur-md text-white hover:bg-white/20")}>
+                          <Video size={22} />
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Loading State */}
                     {!remoteStream && (
-                      <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-[#0a0a0a]">
+                      <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-[#0a0a0a] pointer-events-none">
                         <div className="w-10 h-10 border-2 border-blue-500/20 border-t-blue-500 rounded-full animate-spin" />
-                        <span className="text-[10px] font-black text-[#9ca3af] uppercase tracking-widest">Establishing Signal...</span>
+                        <span className="text-[10px] font-black text-[#9ca3af] uppercase tracking-widest">
+                          {videoCallState === 'active' ? 'Connecting Video...' : 'Establishing Signal...'}
+                        </span>
                       </div>
                     )}
                   </>
@@ -1974,6 +1958,7 @@ export default function App() {
               </div>
 
               {/* Fixed bottom input bar */}
+              {videoCallState !== 'active' && (
                 <div className="px-4 sm:px-6 w-full max-w-4xl mx-auto pointer-events-auto z-50">
                   <AnimatePresence>
                     {replyToMsg && (
@@ -2020,6 +2005,9 @@ export default function App() {
                         onKeyDown={(e) => {
                           if (e.key === 'Enter' && settings.enterToSend) sendMessage(e as any);
                         }}
+                        autoComplete="off"
+                        autoCorrect="off"
+                        spellCheck={false}
                         maxLength={2000}
                         placeholder="Message..."
                         className="w-full bg-transparent text-white px-2 py-2 min-h-[40px] focus:outline-none placeholder:text-[#9ca3af] text-sm sm:text-base font-medium"
@@ -2036,6 +2024,7 @@ export default function App() {
                     </motion.button>
                   </div>
                 </div>
+              )}
               </div>
             </motion.div>
           )}
@@ -2109,6 +2098,66 @@ export default function App() {
                 >
                   Start Discussion
                 </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+
+        {showSettings && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 bg-[#000000]/80 backdrop-blur-sm" onClick={() => setShowSettings(false)}>
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-sm bg-[#0a0a0a] border border-[#1f1f1f] rounded-2xl p-6 shadow-2xl relative"
+            >
+              <div className="flex items-center justify-between mb-8">
+                <div className="space-y-1">
+                  <h3 className="text-xl font-bold uppercase tracking-tight text-white">Settings</h3>
+                  <p className="text-[#9ca3af] text-[10px] font-bold uppercase tracking-widest">Preferences</p>
+                </div>
+                <button 
+                  onClick={() => setShowSettings(false)}
+                  className="p-2 bg-[#111111] hover:bg-[#1a1a1a] rounded-xl transition-all border border-[#1f1f1f]"
+                >
+                  <X size={18} className="text-[#9ca3af]" />
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <div className="flex items-center justify-between p-4 bg-[#111111] rounded-xl border border-[#1f1f1f]">
+                  <div>
+                    <h4 className="text-sm font-bold text-white">Sound Effects</h4>
+                    <p className="text-[10px] text-[#9ca3af] uppercase tracking-widest mt-1">Match & Message alerts</p>
+                  </div>
+                  <button 
+                    onClick={() => setSettings(prev => ({ ...prev, soundEnabled: !prev.soundEnabled }))}
+                    className={cn("w-12 h-6 rounded-full transition-colors relative", settings.soundEnabled ? "bg-blue-500" : "bg-[#2a2a2a]")}
+                  >
+                    <motion.div 
+                      layout
+                      className="w-5 h-5 bg-white rounded-full absolute top-[2px]"
+                      style={{ left: settings.soundEnabled ? '26px' : '2px' }}
+                    />
+                  </button>
+                </div>
+
+                <div className="flex items-center justify-between p-4 bg-[#111111] rounded-xl border border-[#1f1f1f]">
+                  <div>
+                    <h4 className="text-sm font-bold text-white">Enter to Send</h4>
+                    <p className="text-[10px] text-[#9ca3af] uppercase tracking-widest mt-1">Press Enter to send message</p>
+                  </div>
+                  <button 
+                    onClick={() => setSettings(prev => ({ ...prev, enterToSend: !prev.enterToSend }))}
+                    className={cn("w-12 h-6 rounded-full transition-colors relative", settings.enterToSend ? "bg-blue-500" : "bg-[#2a2a2a]")}
+                  >
+                    <motion.div 
+                      layout
+                      className="w-5 h-5 bg-white rounded-full absolute top-[2px]"
+                      style={{ left: settings.enterToSend ? '26px' : '2px' }}
+                    />
+                  </button>
+                </div>
               </div>
             </motion.div>
           </div>
