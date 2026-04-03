@@ -100,6 +100,10 @@ export default function App() {
   const lastTypingEmitRef = useRef<number>(0);
   const matchSoundRef = useRef<HTMLAudioElement | null>(null);
   const messageSoundRef = useRef<HTMLAudioElement | null>(null);
+  // Ref to always hold the latest handleMatchFound — avoids stale closures in channel listeners
+  const handleMatchFoundRef = useRef<((data: any) => void) | null>(null);
+  // Ref to always hold the latest settings — avoids stale closures in channel listeners
+  const settingsRef = useRef(settings);
 
   const [notification, setNotification] = useState<{ message: string; type: 'info' | 'error' | 'success' } | null>(null);
 
@@ -108,13 +112,18 @@ export default function App() {
     setTimeout(() => setNotification(null), 3000);
   };
 
+  // Keep settingsRef in sync with latest settings (no re-renders needed)
+  useEffect(() => {
+    settingsRef.current = settings;
+  }, [settings]);
+
+  // ── One-time mount effect: sounds, beforeunload, lobby presence ──
   useEffect(() => {
     // Clear our own stale state on reload
     supabase.from('waiting_room').delete().eq('socket_id', tabId).then();
 
     // Clean up when the user closes the tab
     const handleBeforeUnload = () => {
-      // Use navigator.sendBeacon if possible, otherwise standard delete (best effort)
       supabase.from('waiting_room').delete().eq('socket_id', tabId).then();
     };
     window.addEventListener('beforeunload', handleBeforeUnload);
@@ -123,16 +132,11 @@ export default function App() {
     matchSoundRef.current = new Audio('https://assets.mixkit.co/active_storage/sfx/2358/2358-preview.mp3');
     messageSoundRef.current = new Audio('https://assets.mixkit.co/active_storage/sfx/2354/2354-preview.mp3');
 
-    // Connection status tracking
     setIsConnected(true);
 
-    // Main Supabase Realtime Channel for global events (like online count)
+    // Lobby presence channel (online count)
     const lobby = supabase.channel('lobby', {
-      config: {
-        presence: {
-          key: tabId,
-        },
-      },
+      config: { presence: { key: tabId } },
     });
 
     lobby
@@ -146,12 +150,12 @@ export default function App() {
         }
       });
 
-    // Personal channel for receiving matches
+    // ── Personal match channel — stable, never torn down mid-search ──
+    // Uses a ref so it always dispatches to the LATEST handleMatchFound
     const personalChannel = supabase.channel(`user_${tabId}`);
-
     personalChannel
       .on('broadcast', { event: 'match_found' }, (payload) => {
-        handleMatchFound(payload.payload);
+        handleMatchFoundRef.current?.(payload.payload);
       })
       .subscribe();
 
@@ -160,10 +164,9 @@ export default function App() {
       lobby.unsubscribe();
       personalChannel.unsubscribe();
       if (peerRef.current) destroyPeer();
-      // Clean up waiting room if we leave
       supabase.from('waiting_room').delete().eq('socket_id', tabId).then();
     };
-  }, [chatMode, settings.soundEnabled]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [currentChannel, setCurrentChannel] = useState<any>(null);
 
@@ -192,7 +195,8 @@ export default function App() {
       setCurrentQuestion(null);
     }
     
-    if (settings.soundEnabled) {
+    // Use ref so this always reads the LATEST soundEnabled, not a stale closure value
+    if (settingsRef.current.soundEnabled) {
       matchSoundRef.current?.play().catch(() => {});
     }
 
@@ -206,7 +210,8 @@ export default function App() {
     channel
       .on('broadcast', { event: 'message' }, (payload) => {
         setMatchMessages(prev => [...prev, payload.payload]);
-        if (settings.soundEnabled && payload.payload.senderId !== tabId) {
+        // Use ref so this always reads the LATEST soundEnabled
+        if (settingsRef.current.soundEnabled && payload.payload.senderId !== tabId) {
           messageSoundRef.current?.play().catch(() => {});
         }
       })
@@ -413,6 +418,22 @@ export default function App() {
     }
   }, []);
 
+  // Keep the ref always pointing to the latest handleMatchFound
+  // Must be set before the function body so personalChannel can always call it
+  useEffect(() => {
+    handleMatchFoundRef.current = handleMatchFound;
+  }); // no deps — runs after every render to stay fresh
+
+  // ── Retry polling while waiting in queue (every 12 seconds) ──
+  useEffect(() => {
+    if (!isSearching) return;
+    const retryInterval = setInterval(() => {
+      // Only retry if still searching and not yet matched
+      startRandomSearch();
+    }, 12000);
+    return () => clearInterval(retryInterval);
+  }, [isSearching]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const startRandomSearch = async (specificInviteId?: string) => {
     setIsSearching(true);
     setIsDisconnected(false);
@@ -441,15 +462,23 @@ export default function App() {
         findError = error;
       } else {
         // Search for a random match
-        const { data, error } = await supabase
+        // Fix: only filter by interests when the user actually has interests.
+        // Previously, interests.length===0 used 'eq {}' which excluded users WITH interests.
+        let query = supabase
           .from('waiting_room')
           .select('*')
           .eq('chat_mode', chatMode)
           .neq('socket_id', tabId)
-          .filter('interests', interests.length > 0 ? 'cs' : 'eq', interests.length > 0 ? `{${interests.join(',')}}` : '{}')
           .order('created_at', { ascending: true })
-          .limit(1)
-          .maybeSingle();
+          .limit(1);
+
+        if (interests.length > 0) {
+          // cs = "contains" — partner must share at least one interest
+          query = query.filter('interests', 'cs', `{${interests.join(',')}}`);
+        }
+        // When interests is empty: match anyone, regardless of their interests
+
+        const { data, error } = await query.maybeSingle();
         matchedUser = data;
         findError = error;
       }
