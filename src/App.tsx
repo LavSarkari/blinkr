@@ -95,7 +95,10 @@ export default function App() {
   const myStreamReadyRef = useRef<boolean>(false);
   const partnerStreamReadyRef = useRef<boolean>(false);
 
+  const chatContainerRef = useRef<HTMLDivElement>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const lastSearchTimeRef = useRef<number>(0);
+  const lastMessageTimeRef = useRef<number>(0);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastTypingEmitRef = useRef<number>(0);
   const matchSoundRef = useRef<HTMLAudioElement | null>(null);
@@ -402,8 +405,16 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (currentMatch) {
-      chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (currentMatch && chatEndRef.current && chatContainerRef.current) {
+      const container = chatContainerRef.current;
+      const { scrollHeight, scrollTop, clientHeight } = container;
+      const distanceToBottom = scrollHeight - scrollTop - clientHeight;
+      
+      // Auto-scroll only if we are already near the bottom (within ~200px)
+      // This prevents snapping down if the user is scrolling up to read history
+      if (distanceToBottom < 200) {
+        chatEndRef.current.scrollIntoView({ behavior: "smooth" });
+      }
     }
   }, [matchMessages, isPartnerTyping]);
 
@@ -435,15 +446,19 @@ export default function App() {
   }, [isSearching]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const startRandomSearch = async (specificInviteId?: string) => {
+    // Basic rate limit: 1 request per second to prevent spamming
+    if (Date.now() - lastSearchTimeRef.current < 1000) return;
+    lastSearchTimeRef.current = Date.now();
+
     setIsSearching(true);
     setIsDisconnected(false);
     setStopState('stop');
 
     const targetInviteId = specificInviteId || inviteId;
 
-    // 🧹 Garbage Collection: Delete orphaned rows older than 15 minutes to prevent stale matches
-    const fifteenMinsAgo = new Date(Date.now() - 15 * 60000).toISOString();
-    supabase.from('waiting_room').delete().lt('created_at', fifteenMinsAgo).then();
+    // 🧹 Garbage Collection: Delete orphaned rows older than 3 minutes to prevent stale ghosts
+    const threeMinsAgo = new Date(Date.now() - 3 * 60000).toISOString();
+    supabase.from('waiting_room').delete().lt('created_at', threeMinsAgo).then();
 
     try {
       let matchedUser = null;
@@ -604,11 +619,20 @@ export default function App() {
 
   const sendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!currentMatch || !inputText.trim() || !currentChannel) return;
+    const text = inputText.trim();
+    if (!currentMatch || !text || !currentChannel) return;
+    
+    // Limits and spam prevention
+    if (text.length > 2000) {
+      showNotification("Message is too long (max 2000 chars)", "error");
+      return;
+    }
+    if (Date.now() - lastMessageTimeRef.current < 250) return;
+    lastMessageTimeRef.current = Date.now();
     
     const msg = {
       id: nanoid(),
-      content: inputText.trim(),
+      content: text,
       senderId: tabId,
       createdAt: Date.now(),
       replyTo: replyToMsg ? { id: replyToMsg.id, content: replyToMsg.content, senderId: replyToMsg.senderId } : null
@@ -1844,7 +1868,9 @@ export default function App() {
                   <div className="absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-[#000000] to-transparent z-20 pointer-events-none" />
                   
                   {/* Scrollable messages container - allow pointer events */}
-                  <div className="w-full max-w-4xl mx-auto px-4 sm:px-6 space-y-3 max-h-[75vh] overflow-y-auto pointer-events-auto pb-8 hide-scrollbar relative z-10"
+                  <div 
+                       ref={chatContainerRef}
+                       className="w-full max-w-4xl mx-auto px-4 sm:px-6 space-y-3 max-h-[75vh] overflow-y-auto pointer-events-auto pb-8 hide-scrollbar relative z-10"
                        onPointerDown={e => e.stopPropagation()} /* Prevents drag gesture stealing focus */
                   >
                   {matchMessages.map((msg, idx) => (
@@ -1994,6 +2020,7 @@ export default function App() {
                         onKeyDown={(e) => {
                           if (e.key === 'Enter' && settings.enterToSend) sendMessage(e as any);
                         }}
+                        maxLength={2000}
                         placeholder="Message..."
                         className="w-full bg-transparent text-white px-2 py-2 min-h-[40px] focus:outline-none placeholder:text-[#9ca3af] text-sm sm:text-base font-medium"
                       />
